@@ -101,7 +101,7 @@ export default function Login() {
       <div className="max-w-md w-full space-y-8">
         <div className="flex justify-between items-center">
           <Link to="/" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">
-            â† Back to Dashboard
+            Back to Dashboard
           </Link>
           <ThemeToggleButton />
         </div>
