@@ -14,7 +14,7 @@ import assignmentsRouter from './routes/assignments';
 import jobAssignmentsRouter from './routes/employeeJobAssignments';
 import employeesRouter from './routes/employees';
 import appraisalsRouter from './routes/appraisals';
-import { getTransporter } from './utils/email';
+import { isPostmarkConfigured, verifyPostmark } from './utils/email';
 
 const app = express();
 
@@ -48,17 +48,18 @@ app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', service: 'hrmoffice-backend' });
 });
 
-// SMTP health verification
-app.get('/health/smtp', async (_req: Request, res: Response) => {
+// Email provider health verification
+const emailHealthCheck = async (_req: Request, res: Response) => {
   try {
-    const tx = getTransporter();
-    if (!tx) return res.json({ configured: false, verified: false, message: 'SMTP env not fully configured' });
-    await tx.verify();
-    return res.json({ configured: true, verified: true });
+    if (!isPostmarkConfigured()) return res.json({ provider: 'postmark', configured: false, verified: false });
+    return res.json({ provider: 'postmark', ...await verifyPostmark() });
   } catch (e: any) {
-    return res.json({ configured: true, verified: false, error: String(e?.message || e) });
+    return res.json({ provider: 'postmark', configured: true, verified: false, error: String(e?.message || e) });
   }
-});
+};
+app.get('/health/email', emailHealthCheck);
+// Keep the former endpoint working for existing deployment checks.
+app.get('/health/smtp', emailHealthCheck);
 
 // Root route - useful for Render/Vercel probes and quick checks
 app.get('/', (_req: Request, res: Response) => {

@@ -1,63 +1,84 @@
-import nodemailer from 'nodemailer';
+import https from 'https';
 
-const smtpHost = process.env.SMTP_HOST || '';
-const smtpPort = Number(process.env.SMTP_PORT || 465);
-const smtpUser = process.env.SMTP_USER || '';
-const smtpPass = process.env.SMTP_PASS || '';
-const smtpFrom = process.env.SMTP_FROM || 'no-reply@hrmoffice.local';
-const smtpDebug = (process.env.SMTP_DEBUG || '').toLowerCase() === 'true';
+const postmarkToken = process.env.POSTMARK_SERVER_TOKEN || '';
+const postmarkFrom = process.env.POSTMARK_FROM || '';
+const postmarkMessageStream = process.env.POSTMARK_MESSAGE_STREAM || 'outbound';
 
-let transporter: nodemailer.Transporter | null = null;
+type PostmarkResult = { statusCode: number; body: any };
 
-export function getTransporter() {
-  if (!transporter) {
-    if (!smtpHost || !smtpUser || !smtpPass) {
-      console.warn('[mailer] SMTP env not fully configured. Emails will be logged to console only.');
-      return null;
-    }
-    transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpPort === 465,
-      requireTLS: smtpPort !== 465,
-      auth: { user: smtpUser, pass: smtpPass },
-      pool: true,
-      connectionTimeout: 120000,
-      greetingTimeout: 60000,
-      socketTimeout: 120000,
-      tls: { minVersion: 'TLSv1.2', servername: smtpHost },
-      logger: smtpDebug,
-      name: 'hrmoffice-backend',
+function postmarkRequest(path: string, method: 'GET' | 'POST', payload?: Record<string, unknown>): Promise<PostmarkResult> {
+  return new Promise((resolve, reject) => {
+    const body = payload ? JSON.stringify(payload) : undefined;
+    const req = https.request({
+      hostname: 'api.postmarkapp.com',
+      path,
+      method,
+      headers: {
+        'Accept': 'application/json',
+        'X-Postmark-Server-Token': postmarkToken,
+        ...(body ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {}),
+      },
+      timeout: 20000,
+    }, (res) => {
+      let response = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => { response += chunk; });
+      res.on('end', () => {
+        let parsed: any = {};
+        try { parsed = response ? JSON.parse(response) : {}; } catch { parsed = { Message: response }; }
+        resolve({ statusCode: res.statusCode || 0, body: parsed });
+      });
     });
-    transporter.verify()
-      .then(() => console.info('[mailer] SMTP transporter verified'))
-      .catch(err => console.error('[mailer] SMTP verify failed:', err));
+    req.on('timeout', () => req.destroy(new Error('Postmark API request timed out')));
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+export function isPostmarkConfigured() {
+  return Boolean(postmarkToken && postmarkFrom);
+}
+
+export async function verifyPostmark() {
+  if (!isPostmarkConfigured()) return { configured: false, verified: false };
+  const result = await postmarkRequest('/server', 'GET');
+  if (result.statusCode < 200 || result.statusCode >= 300) {
+    throw new Error(`Postmark API returned HTTP ${result.statusCode}`);
   }
-  return transporter;
+  return { configured: true, verified: true };
 }
 
 export async function sendMail(to: string, subject: string, html: string, text?: string) {
-  const tx = getTransporter();
-  if (!tx) {
+  if (!isPostmarkConfigured()) {
     if (process.env.NODE_ENV === 'production') {
-      throw new Error('SMTP_HOST, SMTP_USER, and SMTP_PASS must be configured in production');
+      throw new Error('POSTMARK_SERVER_TOKEN and POSTMARK_FROM must be configured in production');
     }
-    console.log('[mailer] Simulated email:', { to, subject, html, text });
-    return { simulated: true } as any;
+    console.info(`[mailer] Postmark not configured; simulated email to ${to}: ${subject}`);
+    return { simulated: true };
   }
-  const maxRetries = Number(process.env.SMTP_RETRIES || 3);
+  const maxRetries = 3;
   let attempt = 0;
-  const payload = { from: smtpFrom, to, subject, html, ...(text ? { text } : {}) } as any;
+  const payload = {
+    From: postmarkFrom,
+    To: to,
+    Subject: subject,
+    HtmlBody: html,
+    ...(text ? { TextBody: text } : {}),
+    MessageStream: postmarkMessageStream,
+  };
   while (true) {
     try {
-      return await tx.sendMail(payload);
+      const result = await postmarkRequest('/email', 'POST', payload);
+      if (result.statusCode >= 200 && result.statusCode < 300) return result.body;
+      const error = new Error(`Postmark API error (${result.statusCode}): ${result.body?.Message || 'Email was not accepted'}`) as Error & { statusCode?: number };
+      error.statusCode = result.statusCode;
+      throw error;
     } catch (err: any) {
       attempt += 1;
-      const code = err?.code || '';
-      const msg = String(err?.message || err);
-      const retryableCodes = ['ETIMEDOUT', 'ECONNRESET', 'EHOSTUNREACH', 'ESOCKET', 'ECONNREFUSED'];
-      const isRetryable = retryableCodes.includes(code) || /timeout|greeting|connection\sclosed/i.test(msg);
-      console.error(`[mailer] sendMail attempt ${attempt} failed (${code}):`, msg);
+      const status = err?.statusCode;
+      const isRetryable = !status || status === 408 || status === 429 || status >= 500;
+      console.error(`[mailer] Postmark send attempt ${attempt} failed:`, String(err?.message || err));
       if (!isRetryable || attempt > maxRetries) throw err;
       await new Promise((resolve) => setTimeout(resolve, Math.min(30000, 1000 * Math.pow(2, attempt))));
     }

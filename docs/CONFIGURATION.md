@@ -40,9 +40,9 @@ The API defaults to `http://localhost:4000`; Vite defaults to `http://localhost:
 | `PORT` | API listening port | Defaults to `4000`; set the port assigned by your hosting provider. |
 | `CORS_ORIGIN` | Allowed frontend origins | A comma-separated list of exact origins, such as your local and production frontend URLs. |
 | `FRONTEND_URL` | Public frontend address used in email links and the email logo | Set this to the deployed frontend's public HTTPS origin, without a trailing slash. A localhost value will not be reachable by email recipients. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Sends transactional email | Use credentials from an SMTP provider such as Amazon SES, Postmark SMTP, SendGrid SMTP, or your mail host. Production verification, invitation, and recovery emails require working SMTP configuration. |
-| `SMTP_DEBUG` | Nodemailer connection diagnostics | Optional; keep `false` in production. |
-| `SMTP_RETRIES` | Retries transient delivery errors | Optional; defaults to `3`. |
+| `POSTMARK_SERVER_TOKEN` | Authenticates transactional email requests | Use the Server API Token from Postmark. The app calls Postmark's HTTPS API on port 443, so it does not depend on outbound SMTP access. |
+| `POSTMARK_FROM` | Sender address for application email | Must be a confirmed sender signature or belong to a verified sending domain in Postmark. |
+| `POSTMARK_MESSAGE_STREAM` | Postmark stream for outgoing email | Optional; defaults to `outbound`. |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Image upload credentials | Cloudinary account credentials. Uploads remain unavailable until configured. |
 | `NODE_ENV` | Runtime mode | Set to `production` on the deployed API. |
 
@@ -54,7 +54,7 @@ The API defaults to `http://localhost:4000`; Vite defaults to `http://localhost:
 | `VITE_API_TIMEOUT_MS` | API request timeout | Optional; defaults to `30000`. |
 | `VITE_W3FORMS_FORM_ID` | Public form ID used by Book a Demo | Create/configure a W3Forms form and set its public form ID. Switching form providers requires changing the submission code. |
 
-Every `VITE_*` value is included in browser code and is public. Never put database credentials, SMTP passwords, Cloudinary secrets, or `JWT_SECRET` in a frontend variable.
+Every `VITE_*` value is included in browser code and is public. Never put database credentials, Postmark tokens, Cloudinary secrets, or `JWT_SECRET` in a frontend variable.
 
 ## Hosting
 
@@ -66,12 +66,12 @@ Before serving traffic, apply production database migrations from the backend:
 npm run prisma:migrate:deploy
 ```
 
-A database URL can usually be switched through `DATABASE_URL` if the replacement is PostgreSQL-compatible. SMTP can usually be switched through credentials when the provider supports standard SMTP. Replacing Cloudinary or W3Forms requires an implementation change because their APIs are directly integrated in the current code.
+A database URL can usually be switched through `DATABASE_URL` if the replacement is PostgreSQL-compatible. Email delivery currently uses the Postmark HTTPS API; switching to another provider requires changing the mailer integration. Replacing Cloudinary or W3Forms requires an implementation change because their APIs are directly integrated in the current code.
 
 ## Current external services
 
 - **PostgreSQL** stores organization and HR data; Prisma manages the schema and migrations.
-- **SMTP** sends verification, invitation, welcome, and recovery emails.
+- **Postmark** sends verification, invitation, welcome, and recovery emails over HTTPS. Create a Postmark server, verify the sender address or domain, then set `POSTMARK_SERVER_TOKEN` and `POSTMARK_FROM` in the backend environment. Postmark documents the [Email API](https://postmarkapp.com/developer/api/email-api) and [sender verification](https://postmarkapp.com/developer/user-guide/managing-your-account/managing-sender-signatures).
 - **Cloudinary** stores uploaded images.
 - **W3Forms** receives Book a Demo form submissions.
 
