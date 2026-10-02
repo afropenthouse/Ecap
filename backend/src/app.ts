@@ -58,8 +58,6 @@ const emailHealthCheck = async (_req: Request, res: Response) => {
   }
 };
 app.get('/health/email', emailHealthCheck);
-// Keep the former endpoint working for existing deployment checks.
-app.get('/health/smtp', emailHealthCheck);
 
 // Root route - useful for Render/Vercel probes and quick checks
 app.get('/', (_req: Request, res: Response) => {
