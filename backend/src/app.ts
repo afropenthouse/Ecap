@@ -20,21 +20,22 @@ const app = express();
 
 app.use(express.json());
 
-// Explicit CORS headers for all routes (preflight and actual)
-// Allowed frontend origins (add any additional production frontends here)
-const configuredOrigins = (process.env.CORS_ORIGIN || '').split(',').map(origin => origin.trim()).filter(Boolean);
-const allowedOrigins = configuredOrigins.length ? configuredOrigins : [
+// Keep known frontend origins available while allowing deployments to add their own.
+const configuredOrigins = (process.env.CORS_ORIGIN || '').split(',').map(origin => origin.trim().replace(/\/+$/, '')).filter(Boolean);
+const allowedOrigins = new Set([
+  'https://hrmecap.vercel.app',
   'https://ecap-project.vercel.app',
   'https://ecap-project.onrender.com',
   'http://localhost:5173',
   'ecap-project.vercel.app',
-];
+  ...configuredOrigins,
+]);
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, cb) => {
     // If no origin (e.g., server-to-server), allow it
     if (!origin) return cb(null, true);
-    if (allowedOrigins.includes(origin)) return cb(null, true);
+    if (allowedOrigins.has(origin)) return cb(null, true);
     return cb(new Error('Not allowed by CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
