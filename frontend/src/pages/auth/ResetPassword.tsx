@@ -6,7 +6,6 @@ import { api } from "../../api/services";
 export default function ResetPassword() {
   const [params] = useSearchParams();
   const token = params.get("token") || "";
-  const org = params.get("org") || "";
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -15,10 +14,10 @@ export default function ResetPassword() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!token || !org) {
+    if (!token) {
       setError("Invalid reset link. Please request a new one.");
     }
-  }, [token, org]);
+  }, [token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +34,7 @@ export default function ResetPassword() {
 
     setLoading(true);
     try {
-      await api.post("/auth/reset-password", { token, organizationSlug: org, password });
+      await api.post("/auth/reset-password", { token, password });
       setSuccess(true);
     } catch (err: any) {
       console.error(err);

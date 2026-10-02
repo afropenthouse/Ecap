@@ -292,6 +292,32 @@ layer(base);
   background-color: #344054;
 }
 
+.sidebar-nav-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.sidebar-nav-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.sidebar-nav-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+.dark .sidebar-nav-scrollbar {
+  scrollbar-color: #475467 transparent;
+}
+
+.dark .sidebar-nav-scrollbar::-webkit-scrollbar-thumb {
+  background: #475467;
+}
+
 @layer utilities {
   /* For Remove Date Icon */
   input[type="date"]::-webkit-inner-spin-button,

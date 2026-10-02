@@ -144,11 +144,11 @@ function IndividualGap() {
 
         // Get assessor assessments
         const assessorAssessments = (allAssessments || []).filter(
-          a => a.type === 'ASSESSOR' && a.status === 'REVIEWED'
+          a => a.type === 'ASSESSOR' && a.status === 'REVIEWED' && a.assessorId === user.id
         );
 
         // Process assessments into format needed for UI
-        const processedData: EmployeeAssessment[] = assessorAssessments.map(assessorAssessment => {
+        const processedResults: (EmployeeAssessment | null)[] = assessorAssessments.map(assessorAssessment => {
           const employee = userById[assessorAssessment.employeeId];
           const selfAssessment = selfByEmployee[assessorAssessment.employeeId];
           const jobAssignment = jobAssignmentByEmployee[assessorAssessment.employeeId];
@@ -190,7 +190,8 @@ function IndividualGap() {
             }
           });
 
-          const compRatings = Object.values(byComp);
+          const compRatings = Object.values(byComp).filter(rating => rating.rating > 0 && rating.assessor_rating > 0);
+          if (compRatings.length === 0) return null;
           const ratedCompetencies = compRatings.filter(r => r.assessor_rating > 0);
           const overallRating = ratedCompetencies.length > 0
             ? ratedCompetencies.reduce((sum, r) => sum + r.assessor_rating, 0) / ratedCompetencies.length
@@ -224,6 +225,7 @@ function IndividualGap() {
             assessor_status: 'reviewed',
           };
         });
+        const processedData = processedResults.filter((assessment): assessment is EmployeeAssessment => assessment !== null);
 
         setAssessments(processedData);
         setCompetencies(comps || []);
@@ -254,6 +256,16 @@ function IndividualGap() {
       (assessment.job_role_name || '').toLowerCase().includes(searchString)
     );
   });
+
+  useEffect(() => {
+    if (filteredAssessments.length === 0) {
+      if (selectedAssessment) setSelectedAssessment(null);
+      return;
+    }
+    if (!selectedAssessment || !filteredAssessments.some(assessment => assessment.id === selectedAssessment.id)) {
+      setSelectedAssessment(filteredAssessments[0]);
+    }
+  }, [filteredAssessments, selectedAssessment]);
 
   // Calculate gap data for charts
   const getChartData = () => {

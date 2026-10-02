@@ -1,5 +1,5 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { Suspense, lazy } from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { Suspense, lazy, type ReactNode } from "react";
 import { useAuth } from "./context/AuthContext";
 import AppLayout from "./layout/AppLayout";
 import PublicLayout from "./layout/PublicLayout";
@@ -17,15 +17,18 @@ const EmailConfirmation = lazy(() => import("./pages/auth/EmailConfirmation"));
 const ForgotPassword = lazy(() => import("./pages/auth/ForgotPassword"));
 const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
 const OrgSignup = lazy(() => import("./pages/auth/OrgSignup"));
+const AcceptInvite = lazy(() => import("./pages/auth/AcceptInvite"));
+const OrganizationSettings = lazy(() => import("./pages/HR/OrganizationSettings"));
+const HRRoleManagement = lazy(() => import("./pages/HR/Role_management/RoleManagement"));
 const PageDescription = lazy(() => import("./pages/Employee/PageDescription/PageDescription"));
 const Home = lazy(() => import("./pages/Dashboard/Home"));
+const PublicHome = lazy(() => import("./pages/Dashboard/PublicHome"));
 const AboutPage = lazy(() => import("./pages/NavPages/AboutPage"));
 const Pricing = lazy(() => import("./pages/NavPages/Pricing"));
 const Resources = lazy(() => import("./pages/NavPages/Resources"));
 const BookDemoPage = lazy(() => import('./pages/NavPages/BookDemoPage'));
-const Callback = lazy(() => import('./pages/auth/Callback'));
-const WelcomePage = lazy(() => import("./pages/auth/WelcomePage"));
-const BucketDiagnostic = lazy(() => import("./pages/BucketDiagnostic"));
+  const WelcomePage = lazy(() => import("./pages/auth/WelcomePage"));
+  const BucketDiagnostic = lazy(() => import("./pages/BucketDiagnostic"));
 
 // Performance Appraisal Components
 const EmployeeAppraisal = lazy(() => import("./pages/Employee/Performance_appraisal/EmployeeAppraisal"));
@@ -46,17 +49,16 @@ const Job = lazy(() => import("./pages/Employee/Job_profiling/Job"));
 const JobCompetencyProfile = lazy(() => import("./pages/Employee/Job_profiling/JobCompetencyProfile"));
 const EmployeeAssessment = lazy(() => import("./pages/Employee/Assessment_management/EmployeeAssessment"));
 const IndividualGap = lazy(() => import("./pages/Employee/Analytics/IndividualGap"));
-const OrganizationGap = lazy(() => import("./pages/Employee/Analytics/OrganizationGap"));
 const EmployeeConsensusAssessment = lazy(() => import("./pages/Employee/Assessment_management/ConsensusAssessment"));
 const EmployeeAnalytics = lazy(() => import("./pages/Employee/Analytics/IndividualGap"));
 
 // Assessor Components
 const AssessorAnalytics = lazy(() => import("./pages/Assessor/Analytics/IndividualGap"));
 const AssessorIndividualGap = lazy(() => import("./pages/Assessor/Analytics/IndividualGap"));
-const AssessorOrganizationGap = lazy(() => import("./pages/Assessor/Analytics/OrganizationGap"));
 const AssessorEmployeeAssessment = lazy(() => import("./pages/Assessor/Assessment_management/EmployeeAssessment"));
 // @ts-ignore - TypeScript can't find the module but it exists
 const AssessorAssessment = lazy(() => import("./pages/Assessor/Assessment_management/AssessorAssessment"));
+const AssessorConsensusAssessment = lazy(() => import("./pages/Assessor/Assessment_management/ConsensusAssessment"));
 const AssessorCompetency = lazy(() => import("./pages/Assessor/Competency_framework/Competency"));
 const AssessorCompetencyCategory = lazy(() => import("./pages/Assessor/Competency_framework/CompetencyCategory"));
 const AssessorCompetencyDescription = lazy(() => import("./pages/Assessor/Competency_framework/CompetencyDescription"));
@@ -72,7 +74,6 @@ const AssessorEmployeeJobAssignment = lazy(() => import("./pages/Assessor/User_a
 
 // HR Components
 const HRPageDescription = lazy(() => import("./pages/HR/PageDescription/PageDescription"));
-const RoleManagement = lazy(() => import("./pages/HR/Role_management/RoleManagement"));
 // const HRAnalytics = lazy(() => import("./pages/HR/Analytics/IndividualGap")); // Not used
 // const HRIndividualGap = lazy(() => import("./pages/HR/Analytics/IndividualGap")); // Removed as HR doesn't need individual gap analysis
 const HROrganizationGap = lazy(() => import("./pages/HR/Analytics/OrganizationGap"));
@@ -98,8 +99,27 @@ const LoadingFallback = () => (
   </div>
 );
 
-export default function App() {
+const EmployeeDetailsByRole = () => {
   const { user } = useAuth();
+  if (user?.roles.includes('hr')) return <HREmployeeDetails />;
+  if (user?.roles.includes('assessor')) return <AssessorEmployeeDetails />;
+  return <EmployeeDetails />;
+};
+
+const RolePage = ({ employee, assessor, hr }: { employee: ReactNode; assessor?: ReactNode; hr?: ReactNode }) => {
+  const { user } = useAuth();
+  const roles = user?.roles ?? [];
+  if (roles.includes('hr') && hr) return hr;
+  if (roles.includes('assessor') && assessor) return assessor;
+  return employee;
+};
+
+export default function App() {
+  const { user, isInitializing } = useAuth();
+
+  // Do not match a protected deep link against the public route table while
+  // the saved session is still being restored.
+  if (isInitializing) return <LoadingFallback />;
 
   return (
     <Router>
@@ -110,8 +130,8 @@ export default function App() {
           <Route path="/auth/login" element={<Login />} />
           <Route path="/auth/signup" element={<SignUp />} />
           <Route path="/auth/org-signup" element={<OrgSignup />} />
+          <Route path="/auth/accept-invite" element={<AcceptInvite />} />
           <Route path="/auth/email-confirmation" element={<EmailConfirmation />} />
-          <Route path="/auth/callback" element={<Callback />} />
           <Route path="/auth/welcome-page" element={<WelcomePage />} />
           <Route path="/auth/forgot-password" element={<ForgotPassword />} />
           <Route path="/auth/reset-password" element={<ResetPassword />} />
@@ -122,8 +142,8 @@ export default function App() {
           {/* Public pages - accessible to all users */}
           {!user ? (
             <Route element={<PublicLayout />}>
-              <Route path="/" element={<Home />} />
-              <Route path="/home" element={<Home />} />
+              <Route path="/" element={<PublicHome />} />
+              <Route path="/home" element={<PublicHome />} />
               <Route path="/about" element={<AboutPage />} />
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/resources" element={<Resources />} />
@@ -142,77 +162,50 @@ export default function App() {
               {/* Diagnostic Routes - Available to all authenticated users */}
               <Route path="/bucket-diagnostic" element={<BucketDiagnostic />} />
 
-              {/* Employee Routes */}
-              <Route element={<RoleBasedRoute allowedRoles={['employee']} />}>
-                <Route path="/page-description" element={<PageDescription />} />
+              <Route element={<RoleBasedRoute allowedRoles={['employee', 'assessor', 'hr']} />}>
                 <Route path="/dashboard" element={<Home />} />
-                {/* <Route path="/user" element={<User />} /> */}
-                <Route path="/employee-details" element={<EmployeeDetails />} />
-                <Route path="/employee-job-assignment" element={<EmployeeJobAssignment />} />
-                <Route path="/employee-assessor-assign" element={<EmployeeAssessorAssign />} />
-                <Route path="/competency-description" element={<CompetencyDescription />} />
-                <Route path="/competency-category" element={<CompetencyCategory />} />
-                <Route path="/proficiency-description" element={<CompetencyProficiency />} />
-                <Route path="/competency" element={<Competency />} />
-                <Route path="/competency-domain" element={<CompetencyDomain />} />
-                <Route path="/job" element={<Job />} />
-                <Route path="/job-competency-profile" element={<JobCompetencyProfile />} />
-                <Route path="/employee-assessment" element={<EmployeeAssessment />} />
-                <Route path="/individual-gap" element={<IndividualGap />} />
-                <Route path="/organization-gap" element={<OrganizationGap />} />
-                <Route path="/employee/consensus-assessment" element={<EmployeeConsensusAssessment />} />
-                <Route path="/employee/analytics" element={<EmployeeAnalytics />} />
-                <Route path="/employee/performance-appraisal" element={<EmployeeAppraisal />} />
-                {/* Keep an un-prefixed route for backward compatibility and direct links */}
-                <Route path="/performance-appraisal" element={<EmployeeAppraisal />} />
+                <Route path="/page-description" element={<RolePage employee={<PageDescription />} assessor={<AssessorPageDescription />} hr={<HRPageDescription />} />} />
+                <Route path="/employee-details" element={<EmployeeDetailsByRole />} />
+                <Route path="/employee-job-assignment" element={<RolePage employee={<EmployeeJobAssignment />} assessor={<AssessorEmployeeJobAssignment />} hr={<HREmployeeJobAssignment />} />} />
+                <Route path="/employee-assessor-assign" element={<RolePage employee={<EmployeeAssessorAssign />} assessor={<AssessorEmployeeAssessorAssign />} hr={<HREmployeeAssessorAssign />} />} />
+                <Route path="/competency-description" element={<RolePage employee={<CompetencyDescription />} assessor={<AssessorCompetencyDescription />} hr={<HRCompetencyDescription />} />} />
+                <Route path="/competency-category" element={<RolePage employee={<CompetencyCategory />} assessor={<AssessorCompetencyCategory />} hr={<HRCompetencyCategory />} />} />
+                <Route path="/proficiency-description" element={<RolePage employee={<CompetencyProficiency />} assessor={<AssessorCompetencyProficiency />} hr={<HRCompetencyProficiency />} />} />
+                <Route path="/competency" element={<RolePage employee={<Competency />} assessor={<AssessorCompetency />} hr={<HRCompetency />} />} />
+                <Route path="/competency-domain" element={<RolePage employee={<CompetencyDomain />} assessor={<AssessorCompetencyDomain />} hr={<HRCompetencyDomain />} />} />
+                <Route path="/job" element={<RolePage employee={<Job />} assessor={<AssessorJob />} hr={<HRJob />} />} />
+                <Route path="/job-competency-profile" element={<RolePage employee={<JobCompetencyProfile />} assessor={<AssessorJobCompetencyProfile />} hr={<HRJobCompetencyProfile />} />} />
+                <Route path="/employee-assessment" element={<RolePage employee={<EmployeeAssessment />} assessor={<AssessorEmployeeAssessment />} hr={<HRAssessorAssessment />} />} />
+                <Route path="/assessor-assessment" element={<RolePage employee={<EmployeeAssessment />} assessor={<AssessorAssessment />} hr={<HRAssessorAssessment />} />} />
+                <Route path="/consensus-assessment" element={<RolePage employee={<EmployeeConsensusAssessment />} assessor={<AssessorConsensusAssessment />} hr={<HRConsensusAssessment />} />} />
+                <Route path="/individual-gap" element={<RolePage employee={<IndividualGap />} assessor={<AssessorIndividualGap />} hr={<Navigate to="/organization-gap" replace />} />} />
+                <Route path="/organization-gap" element={<RolePage employee={<Navigate to="/individual-gap" replace />} assessor={<Navigate to="/individual-gap" replace />} hr={<HROrganizationGap />} />} />
+                <Route path="/analytics" element={<RolePage employee={<EmployeeAnalytics />} assessor={<AssessorAnalytics />} hr={<HROrganizationGap />} />} />
+                <Route path="/performance-appraisal" element={<RolePage employee={<EmployeeAppraisal />} assessor={<AssessorAppraisal />} hr={<HRAppraisal />} />} />
               </Route>
-
-              {/* Assessor Routes */}
-              <Route element={<RoleBasedRoute allowedRoles={['assessor']} />}>
-                <Route path="/assessor/page-description" element={<AssessorPageDescription />} />
-                {/* <Route path="/assessor/user" element={<AssessorUser />} /> */}
-                <Route path="/assessor/employee-details" element={<AssessorEmployeeDetails />} />
-                <Route path="/assessor/employee-job-assignment" element={<AssessorEmployeeJobAssignment />} />
-                <Route path="/assessor/employee-assessor-assign" element={<AssessorEmployeeAssessorAssign />} />
-                <Route path="/assessor/competency-description" element={<AssessorCompetencyDescription />} />
-                <Route path="/assessor/competency-category" element={<AssessorCompetencyCategory />} />
-                <Route path="/assessor/proficiency-description" element={<AssessorCompetencyProficiency />} />
-                <Route path="/assessor/competency" element={<AssessorCompetency />} />
-                <Route path="/assessor/competency-domain" element={<AssessorCompetencyDomain />} />
-                <Route path="/assessor/job" element={<AssessorJob />} />
-                <Route path="/assessor/job-competency-profile" element={<AssessorJobCompetencyProfile />} />
-                <Route path="/assessor/employee-assessment" element={<AssessorEmployeeAssessment />} />
-                <Route path="/assessor/assessment" element={<AssessorAssessment />} />
-                <Route path="/assessor/individual-gap" element={<AssessorIndividualGap />} />
-                <Route path="/assessor/organization-gap" element={<AssessorOrganizationGap />} />
-                <Route path="/assessor/analytics" element={<AssessorAnalytics />} />
-                <Route path="/assessor/performance-appraisal" element={<AssessorAppraisal />} />
-              </Route>
-
-              {/* HR Routes */}
               <Route element={<RoleBasedRoute allowedRoles={['hr']} />}>
-                <Route path="/hr/page-description" element={<HRPageDescription />} />
-                <Route path="/hr/role-management" element={<RoleManagement />} />
-                {/* Removed Individual Gap route as HR doesn't need individual gap analysis */}
-                {/* <Route path="/hr/individual-gap" element={<HRIndividualGap />} /> */}
-                <Route path="/hr/organization-gap" element={<HROrganizationGap />} />
-                <Route path="/hr/assessor-assessment" element={<HRAssessorAssessment />} />
-                <Route path="/hr/consensus-assessment" element={<HRConsensusAssessment />} />
-                <Route path="/hr/employee-assessment" element={<HRAssessorAssessment />} />
-                <Route path="/hr/competency" element={<HRCompetency />} />
-                <Route path="/hr/competency-category" element={<HRCompetencyCategory />} />
-                <Route path="/hr/competency-description" element={<HRCompetencyDescription />} />
-                <Route path="/hr/competency-domain" element={<HRCompetencyDomain />} />
-                <Route path="/hr/competency-proficiency" element={<HRCompetencyProficiency />} />
-                <Route path="/hr/job" element={<HRJob />} />
-                <Route path="/hr/job-competency-profile" element={<HRJobCompetencyProfile />} />
-                <Route path="/hr/employee-assessor-assign" element={<HREmployeeAssessorAssign />} />
-                <Route path="/hr/performance-appraisal" element={<HRAppraisal />} />
-                <Route path="/hr/employee-details" element={<HREmployeeDetails />} />
-                <Route path="/hr/employee-job-assignment" element={<HREmployeeJobAssignment />} />
-                {/* <Route path="/hr/user" element={<HRUser />} /> */}
-                {/* <Route path="/hr/analytics" element={<HRAnalytics />} /> */}
+                <Route path="/organization-settings" element={<OrganizationSettings />} />
+                <Route path="/team-members" element={<HRRoleManagement />} />
+                <Route path="/role-management" element={<Navigate to="/team-members" replace />} />
               </Route>
+              {/* Redirect old role-prefixed paths to the shared URL. */}
+              <Route path="/hr/organization-settings" element={<Navigate to="/organization-settings" replace />} />
+              <Route path="/hr/role-management" element={<Navigate to="/team-members" replace />} />
+              <Route path="/hr/dashboard" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/assessor/dashboard" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/employee/dashboard" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/hr/competency-proficiency" element={<Navigate to="/proficiency-description" replace />} />
+              <Route path="/assessor/analytics" element={<Navigate to="/analytics" replace />} />
+              <Route path="/hr/consensus-assessment" element={<Navigate to="/consensus-assessment" replace />} />
+              <Route path="/hr/assessor-assessment" element={<Navigate to="/assessor-assessment" replace />} />
+              <Route path="/assessor/assessment" element={<Navigate to="/assessor-assessment" replace />} />
+              <Route path="/employee/consensus-assessment" element={<Navigate to="/consensus-assessment" replace />} />
+              <Route path="/employee/analytics" element={<Navigate to="/analytics" replace />} />
+              <Route path="/employee/performance-appraisal" element={<Navigate to="/performance-appraisal" replace />} />
+              {['page-description','employee-details','employee-job-assignment','employee-assessor-assign','competency-description','competency-category','proficiency-description','competency','competency-domain','job','job-competency-profile','employee-assessment','individual-gap','organization-gap','performance-appraisal'].flatMap((path) => [
+                <Route key={`hr-${path}`} path={`/hr/${path}`} element={<Navigate to={`/${path}`} replace />} />,
+                <Route key={`assessor-${path}`} path={`/assessor/${path}`} element={<Navigate to={`/${path}`} replace />} />,
+              ])}
             </Route>
           )}
 
@@ -220,7 +213,7 @@ export default function App() {
           <Route path="/unauthorized" element={<Unauthorized />} />
 
           {/* 404 Route */}
-          <Route path="*" element={<NotFound />} />
+          <Route path="*" element={user ? <NotFound /> : <Navigate to="/auth/login" replace />} />
         </Routes>
       </Suspense>
     </Router>

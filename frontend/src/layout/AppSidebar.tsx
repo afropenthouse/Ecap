@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { Cog6ToothIcon } from "@heroicons/react/24/outline";
 import { useAuth } from "../context/AuthContext";
 
 // icon library
@@ -23,16 +24,7 @@ type NavItem = {
   subItems?: { name: string; path: string; pro?: boolean; new?: boolean; subItems?: { name: string; path: string }[] }[];
 };
 
-const getRolePrefix = (role: string) => {
-  switch (role) {
-    case 'hr':
-      return '/hr';
-    case 'assessor':
-      return '/assessor';
-    default:
-      return '';
-  }
-};
+const normalizePath = (path: string) => path.replace(/^\/(hr|assessor|employee)\//, '/');
 
 // EmployeeNavItems
 const employeeNavItems: NavItem[] = [
@@ -76,7 +68,7 @@ const employeeNavItems: NavItem[] = [
     subItems: [
       { name: "Employee Assessment", path: "/employee-assessment" },
       // employee routes are namespaced under /employee in App.tsx
-      { name: "Performance Appraisal", path: "/employee/performance-appraisal" },
+      { name: "Performance Appraisal", path: "/performance-appraisal" },
     ],
   },
   {
@@ -84,7 +76,6 @@ const employeeNavItems: NavItem[] = [
     name: "Analytics",
     subItems: [
       { name: "Individual Gap", path: "/individual-gap" },
-      // { name: "Organization Gap", path: "/organization-gap" }, // Removed as employees don't need organization gap analysis
     ],
   },
 ];
@@ -94,51 +85,50 @@ const assessorNavItems: NavItem[] = [
   {
     icon: <PageIcon />,
     name: "Page Description",
-    path: "/assessor/page-description",
+    path: "/page-description",
   },
   {
     icon: <UserCircleIcon />,
     name: "User & Role Management",
     subItems: [
-      // { name: "User", path: "/assessor/user" },
-      { name: "Employee Details", path: "/assessor/employee-details" },
-      { name: "Employee Job Assignment", path: "/assessor/employee-job-assignment" },
-      { name: "Employee Assessor Assign", path: "/assessor/employee-assessor-assign" },
+      // { name: "User", path: "/user" },
+      { name: "Employee Details", path: "/employee-details" },
+      { name: "Employee Job Assignment", path: "/employee-job-assignment" },
+      { name: "Employee Assessor Assign", path: "/employee-assessor-assign" },
     ],
   },
   {
     icon: <PieChartIcon />,
     name: "Competency Framework",
     subItems: [
-      { name: "Competency Description", path: "/assessor/competency-description" },
-      { name: "Competency Category", path: "/assessor/competency-category" },
-      { name: "Competency", path: "/assessor/competency" },
-      { name: "Competency Domain", path: "/assessor/competency-domain" },
-      { name: "Competency Proficiency", path: "/assessor/proficiency-description" },
+      { name: "Competency Description", path: "/competency-description" },
+      { name: "Competency Category", path: "/competency-category" },
+      { name: "Competency", path: "/competency" },
+      { name: "Competency Domain", path: "/competency-domain" },
+      { name: "Competency Proficiency", path: "/proficiency-description" },
     ],
   },
   {
     icon: <TableIcon />,
     name: "Job Profiling",
     subItems: [
-      { name: "Job", path: "/assessor/job" },
-      { name: "Job Competency Profile", path: "/assessor/job-competency-profile" },
+      { name: "Job", path: "/job" },
+      { name: "Job Competency Profile", path: "/job-competency-profile" },
     ],
   },
   {
     icon: <PlugInIcon />,
     name: "Assessment Mgt",
     subItems: [
-      { name: "Assessor Assessment", path: "/assessor/assessment" },
-      { name: "Performance Appraisal", path: "/assessor/performance-appraisal" },
+      { name: "Assessor Assessment", path: "/assessor-assessment" },
+      { name: "Performance Appraisal", path: "/performance-appraisal" },
     ],
   },
   {
     icon: <BoxCubeIcon />,
     name: "Analytics",
     subItems: [
-      { name: "Individual Gap", path: "/assessor/individual-gap" },
-      // { name: "Organization Gap", path: "/assessor/organization-gap" }, // Commented out as requested
+      { name: "Individual Gap", path: "/individual-gap" },
     ],
   },
 ];
@@ -148,53 +138,60 @@ const hrNavItems: NavItem[] = [
   {
     icon: <PageIcon />,
     name: "Page Description",
-    path: "/hr/page-description",
+    path: "/page-description",
+  },
+  {
+    icon: <Cog6ToothIcon />,
+    name: "Organization",
+    subItems: [
+      { name: "Organization Settings", path: "/organization-settings" },
+      { name: "Team Members", path: "/team-members" },
+    ],
   },
   {
     icon: <UserCircleIcon />,
     name: "User & Role Management",
     subItems: [
-      // { name: "User", path: "/hr/user" },
-      { name: "Employee Details", path: "/hr/employee-details" },
-      { name: "Assign Job Roles", path: "/hr/employee-job-assignment" },
-      { name: "Assign an Assessor", path: "/hr/employee-assessor-assign" },
-      { name: "Role Management", path: "/hr/role-management" },
+      // { name: "User", path: "/user" },
+      { name: "Employee Details", path: "/employee-details" },
+      { name: "Assign Job Roles", path: "/employee-job-assignment" },
+      { name: "Assign an Assessor", path: "/employee-assessor-assign" },
     ],
   },
   {
     icon: <PieChartIcon />,
     name: "Competency Framework",
     subItems: [
-      { name: "Competency Description", path: "/hr/competency-description" },
-      { name: "Competency Category", path: "/hr/competency-category" },
-      { name: "Competency", path: "/hr/competency" },
-      { name: "Competency Domain", path: "/hr/competency-domain" },
-      { name: "Competency Proficiency", path: "/hr/competency-proficiency" },
+      { name: "Competency Description", path: "/competency-description" },
+      { name: "Competency Category", path: "/competency-category" },
+      { name: "Competency", path: "/competency" },
+      { name: "Competency Domain", path: "/competency-domain" },
+      { name: "Competency Proficiency", path: "/proficiency-description" },
     ],
   },
   {
     icon: <TableIcon />,
     name: "Job Profiling",
     subItems: [
-      { name: "Job", path: "/hr/job" },
-      { name: "Job Competency Profile", path: "/hr/job-competency-profile" },
+      { name: "Job", path: "/job" },
+      { name: "Job Competency Profile", path: "/job-competency-profile" },
     ],
   },
   {
     icon: <PlugInIcon />,
     name: "Assessment Mgt",
     subItems: [
-      { name: "Assessor Assessment", path: "/hr/assessor-assessment" },
-      { name: "Consensus Assessment", path: "/hr/consensus-assessment" },
-      { name: "Performance Appraisal", path: "/hr/performance-appraisal" },
+      { name: "Assessor Assessment", path: "/assessor-assessment" },
+      { name: "Consensus Assessment", path: "/consensus-assessment" },
+      { name: "Performance Appraisal", path: "/performance-appraisal" },
     ],
   },
   {
     icon: <BoxCubeIcon />,
     name: "Analytics",
     subItems: [
-      // { name: "Individual Gap", path: "/hr/individual-gap" }, // Removed as HR doesn't need individual gap analysis
-      { name: "Organization Gap", path: "/hr/organization-gap" },
+      // { name: "Individual Gap", path: "/individual-gap" }, // Removed as HR doesn't need individual gap analysis
+      { name: "Organization Gap", path: "/organization-gap" },
     ],
   },
 ];
@@ -213,36 +210,7 @@ const AppSidebar: React.FC = () => {
   const isActive = (path: string) => {
     if (!user) return false;
 
-    // Define role hierarchy for path matching
-    const roleHierarchy: { [key: string]: string[] } = {
-      'hr': ['hr', 'assessor', 'employee'],
-      'assessor': ['assessor', 'employee'],
-      'employee': ['employee']
-    };
-
-    // Get the user's highest role
-    let highestRole = 'employee';
-    if (user.roles.includes('hr')) {
-      highestRole = 'hr';
-    } else if (user.roles.includes('assessor')) {
-      highestRole = 'assessor';
-    }
-
-    // Get all prefixes this user can access
-    const accessiblePrefixes = roleHierarchy[highestRole].map(role => getRolePrefix(role));
-
-    // Check if the current path exactly matches the given path
-    for (const prefix of accessiblePrefixes) {
-      const fullPath = path.startsWith(prefix) ? path : `${prefix}${path}`;
-
-      // Use exact path matching instead of startsWith
-      // This ensures only the exact path is considered active
-      if (location.pathname === fullPath) {
-        return true;
-      }
-    }
-
-    return false;
+    return normalizePath(location.pathname) === normalizePath(path);
   };
 
   const getNavItems = () => {
@@ -353,7 +321,7 @@ const AppSidebar: React.FC = () => {
           ) : (
             nav.path && (
               <Link
-                to={nav.path}
+                to={normalizePath(nav.path)}
                 className={`menu-item group ${
                   isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"
                 }`}
@@ -390,7 +358,7 @@ const AppSidebar: React.FC = () => {
                 {nav.subItems.map((subItem) => (
                   <li key={subItem.name}>
                     <Link
-                      to={subItem.path}
+                      to={normalizePath(subItem.path)}
                       className={`menu-dropdown-item ${
                         isActive(subItem.path)
                           ? "menu-dropdown-item-active"
@@ -514,7 +482,7 @@ const AppSidebar: React.FC = () => {
           </Link>
         )}
       </div>
-      <div className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
+      <div className="sidebar-nav-scrollbar -mr-5 flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto pr-2 duration-300 ease-linear">
         <nav className="mb-6">
           <div className="flex flex-col gap-4">
             <div>

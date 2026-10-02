@@ -16,19 +16,19 @@ const ResourceCard: React.FC<{
   description: string;
   link: string;
 }> = ({ icon, title, description, link }) => (
-  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 hover:shadow-xl transition-shadow duration-300">
-    <div className="flex items-center mb-4">
-      <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+  <div className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition duration-300 hover:-translate-y-1 hover:border-indigo-200 hover:shadow-xl dark:border-gray-800 dark:bg-gray-900">
+    <div className="mb-5 flex items-center">
+      <div className="rounded-xl bg-indigo-50 p-3 transition group-hover:bg-indigo-100 dark:bg-indigo-950 dark:group-hover:bg-indigo-900">
         {icon}
       </div>
-      <h3 className="text-xl font-semibold ml-4 text-gray-900 dark:text-white">{title}</h3>
+      <h3 className="ml-4 text-lg font-semibold tracking-tight text-slate-900 dark:text-white">{title}</h3>
     </div>
-    <p className="text-gray-700 dark:text-gray-300 mb-4">{description}</p>
+    <p className="mb-5 text-sm leading-6 text-slate-600 dark:text-gray-300">{description}</p>
     <a
       href={link}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium inline-flex items-center"
+      className="inline-flex items-center font-semibold text-indigo-700 transition hover:text-indigo-900 dark:text-cyan-300 dark:hover:text-cyan-200"
     >
       Learn More
       <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -108,33 +108,34 @@ export default function ResourcesPage() {
       />
 
       {/* Hero Section */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white py-16">
+      <div className="relative isolate overflow-hidden bg-[#101b37] py-14 text-white sm:py-16">
+        <div className="absolute -right-20 -top-28 -z-10 size-96 rounded-full bg-indigo-500/25 blur-3xl" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h1 className="text-4xl font-bold mb-6">HR Resources</h1>
-          <p className="text-xl max-w-3xl">
+          <h1 className="mb-5 text-4xl font-semibold tracking-tight sm:text-5xl">HR Resources</h1>
+          <p className="max-w-3xl text-lg leading-7 text-slate-300 sm:text-xl">
             Access our comprehensive collection of resources designed to help you optimize your workforce management and competency assessment processes.
           </p>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-14 lg:px-8">
         {/* Introduction */}
-        <div className="prose prose-lg max-w-none mb-16">
-          <p className="text-gray-700 dark:text-gray-300">
+        <div className="mb-10 max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:mb-12 sm:p-8">
+          <p className="leading-7 text-slate-600 dark:text-gray-300">
             At HRM Office, we believe in empowering HR professionals with the knowledge and tools they need to succeed. Our curated collection of resources includes guides, webinars, templates, and best practices to help you implement effective competency assessment programs and drive organizational success.
           </p>
         </div>
 
         {/* Category Filter */}
-        <div className="flex flex-wrap justify-center gap-3 mb-12">
-          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium shadow-md hover:bg-blue-700 transition-colors">
+        <div className="mb-9 flex flex-wrap gap-2.5">
+          <button className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700">
             All Resources
           </button>
           {categories.map((category) => (
             <button 
               key={category} 
-              className="px-4 py-2 bg-white dark:bg-gray-800 text-gray-800 dark:text-white rounded-lg text-sm font-medium shadow-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-800"
             >
               {category}
             </button>
@@ -142,7 +143,7 @@ export default function ResourcesPage() {
         </div>
 
         {/* Resource Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-16">
+        <div className="mb-12 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 sm:mb-14">
           {resources.map((resource) => (
             <ResourceCard
               key={resource.title}
@@ -155,20 +156,20 @@ export default function ResourcesPage() {
         </div>
 
         {/* Knowledge Base CTA */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-lg border border-gray-200 dark:border-gray-700">
+        <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-cyan-50 p-6 shadow-sm dark:border-gray-800 dark:from-gray-900 dark:via-gray-900 dark:to-slate-900 sm:p-8">
           <div className="flex flex-col md:flex-row items-center">
             <div className="md:w-2/3 mb-6 md:mb-0 md:pr-8">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+                <h2 className="mb-3 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
                 Ready to Transform Your HR Processes?
               </h2>
-              <p className="text-gray-600 dark:text-gray-300">
+              <p className="leading-7 text-slate-600 dark:text-gray-300">
                 Get personalized guidance on implementing competency assessments and optimizing your workforce management strategy.
               </p>
             </div>
             <div className="md:w-1/3 flex justify-center md:justify-end">
               <a 
                 href="/book-demo" 
-                className="w-full md:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-md transition-colors text-center"
+                className="w-full rounded-xl bg-indigo-600 px-6 py-3 text-center font-semibold text-white shadow-sm transition hover:bg-indigo-700 md:w-auto"
               >
                 Schedule a Consultation
               </a>

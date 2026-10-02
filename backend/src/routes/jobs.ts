@@ -21,9 +21,14 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 // Create job (HR & Assessor)
 router.post('/', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
   try {
-    const { title, description, departmentId } = req.body as { title: string; description?: string; departmentId?: string };
+    const { title, description, departmentId } = req.body as { title: string; description?: string; departmentId?: string | null };
+    if (!title?.trim()) return res.status(400).json({ error: 'Job title is required.' });
+    if (departmentId) {
+      const department = await prisma.department.findUnique({ where: { id: departmentId } });
+      if (!department || department.organizationId !== req.user!.organizationId) return res.status(400).json({ error: 'Choose a department in your organisation.' });
+    }
     const job = await prisma.job.create({
-      data: { organizationId: req.user!.organizationId, title, description, departmentId },
+      data: { organizationId: req.user!.organizationId, title: title.trim(), description, departmentId: departmentId || null },
     });
     res.status(201).json(job);
   } catch (e) {
@@ -36,13 +41,18 @@ router.post('/', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, 
 router.put('/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { title, description, departmentId } = req.body as { title?: string; description?: string; departmentId?: string };
+    const { title, description, departmentId } = req.body as { title?: string; description?: string; departmentId?: string | null };
 
     const existing = await prisma.job.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Job not found' });
     if (existing.organizationId !== req.user!.organizationId) return res.status(403).json({ error: 'Forbidden' });
+    if (title !== undefined && !title.trim()) return res.status(400).json({ error: 'Job title is required.' });
+    if (departmentId) {
+      const department = await prisma.department.findUnique({ where: { id: departmentId } });
+      if (!department || department.organizationId !== req.user!.organizationId) return res.status(400).json({ error: 'Choose a department in your organisation.' });
+    }
 
-    const job = await prisma.job.update({ where: { id }, data: { title, description, departmentId } });
+    const job = await prisma.job.update({ where: { id }, data: { title: title?.trim(), description, departmentId: departmentId === '' ? null : departmentId } });
     res.json(job);
   } catch (e) {
     console.error(e);
@@ -57,9 +67,11 @@ router.delete('/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Requ
     const job = await prisma.job.findUnique({ where: { id } });
     if (!job || job.organizationId !== req.user!.organizationId) return res.status(404).json({ error: 'Job not found' });
 
-    // Remove dependent rows first to avoid FK constraint errors
+    const assignmentCount = await prisma.employeeJobAssignment.count({ where: { organizationId: req.user!.organizationId, jobId: id } });
+    if (assignmentCount > 0) return res.status(409).json({ error: 'This job is assigned to employees. Reassign or remove those employee assignments before deleting it.' });
+
+    // Requirements can be removed with the job once there are no employee assignments.
     await prisma.$transaction([
-      prisma.employeeJobAssignment.deleteMany({ where: { organizationId: req.user!.organizationId, jobId: id } }),
       prisma.jobCompetency.deleteMany({ where: { organizationId: req.user!.organizationId, jobId: id } }),
       prisma.job.delete({ where: { id } }),
     ]);
@@ -67,8 +79,8 @@ router.delete('/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Requ
     res.json({ success: true });
   } catch (e: any) {
     console.error(e);
-    // Bubble up clearer message when FK constraints block deletion
-    return res.status(500).json({ error: e?.message || 'Failed to delete job' });
+    if (e?.code === 'P2003') return res.status(409).json({ error: 'This job is still in use. Remove its employee assignments before deleting it.' });
+    return res.status(500).json({ error: 'Failed to delete job' });
   }
 });
 
@@ -77,6 +89,7 @@ router.post('/:id/requirements', authMiddleware, rbac(['HR', 'ASSESSOR']), async
   try {
     const { id } = req.params;
     const { competencyId, requiredLevel } = req.body as { competencyId: string; requiredLevel: number };
+    if (!competencyId || !Number.isInteger(requiredLevel) || requiredLevel < 1) return res.status(400).json({ error: 'Choose a competency and configured proficiency level.' });
     const job = await prisma.job.findUnique({ where: { id } });
     if (!job || job.organizationId !== req.user!.organizationId) return res.status(404).json({ error: 'Job not found' });
 
@@ -84,12 +97,19 @@ router.post('/:id/requirements', authMiddleware, rbac(['HR', 'ASSESSOR']), async
     const comp = await prisma.competency.findUnique({ where: { id: competencyId } });
     if (!comp || comp.organizationId !== req.user!.organizationId) return res.status(404).json({ error: 'Competency not found' });
 
+    const level = await prisma.proficiencyLevel.findFirst({ where: { organizationId: req.user!.organizationId, levelNumber: requiredLevel } });
+    if (!level) return res.status(400).json({ error: 'Choose one of the proficiency levels configured for your organisation.' });
+
+    const duplicate = await prisma.jobCompetency.findFirst({ where: { organizationId: req.user!.organizationId, jobId: id, competencyId } });
+    if (duplicate) return res.status(409).json({ error: 'This job already has a requirement for that competency.' });
+
     const jc = await prisma.jobCompetency.create({
       data: { organizationId: req.user!.organizationId, jobId: id, competencyId, requiredLevel },
     });
     res.status(201).json(jc);
-  } catch (e) {
+  } catch (e: any) {
     console.error(e);
+    if (e?.code === 'P2002') return res.status(409).json({ error: 'This job already has a requirement for that competency.' });
     res.status(500).json({ error: 'Failed to add requirement' });
   }
 });
@@ -109,18 +129,26 @@ router.put('/:id/requirements/:reqId', authMiddleware, rbac(['HR', 'ASSESSOR']),
     }
 
     const updateData: any = {};
-    if (typeof requiredLevel === 'number') updateData.requiredLevel = requiredLevel;
+    if (requiredLevel !== undefined) {
+      if (!Number.isInteger(requiredLevel) || requiredLevel < 1) return res.status(400).json({ error: 'Choose a configured proficiency level.' });
+      const level = await prisma.proficiencyLevel.findFirst({ where: { organizationId: req.user!.organizationId, levelNumber: requiredLevel } });
+      if (!level) return res.status(400).json({ error: 'Choose one of the proficiency levels configured for your organisation.' });
+      updateData.requiredLevel = requiredLevel;
+    }
 
     if (competencyId) {
       const comp = await prisma.competency.findUnique({ where: { id: competencyId } });
       if (!comp || comp.organizationId !== req.user!.organizationId) return res.status(404).json({ error: 'Competency not found' });
+      const duplicate = await prisma.jobCompetency.findFirst({ where: { organizationId: req.user!.organizationId, jobId: id, competencyId, id: { not: reqId } } });
+      if (duplicate) return res.status(409).json({ error: 'This job already has a requirement for that competency.' });
       updateData.competencyId = competencyId;
     }
 
     const updated = await prisma.jobCompetency.update({ where: { id: reqId }, data: updateData });
     res.json(updated);
-  } catch (e) {
+  } catch (e: any) {
     console.error(e);
+    if (e?.code === 'P2002') return res.status(409).json({ error: 'This job already has a requirement for that competency.' });
     res.status(500).json({ error: 'Failed to update requirement' });
   }
 });

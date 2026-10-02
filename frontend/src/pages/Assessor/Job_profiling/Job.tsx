@@ -93,7 +93,7 @@ export default function Job() {
         await updateJob(selectedJob.id, {
           title: formData.title,
           description: formData.description,
-          departmentId: formData.departmentId || undefined,
+          departmentId: formData.departmentId || null,
         });
         await fetchJobs();
         setShowEditModal(false);
@@ -102,7 +102,7 @@ export default function Job() {
         await createJob({
           title: formData.title,
           description: formData.description,
-          departmentId: formData.departmentId || undefined,
+          departmentId: formData.departmentId || null,
         });
         await fetchJobs();
         setShowAddModal(false);
@@ -111,7 +111,7 @@ export default function Job() {
       setFormData({ title: '', description: '', departmentId: '' });
     } catch (err: any) {
       console.error('Error saving job:', err);
-      setError(err.response?.data?.error || 'Failed to save job. Please try again later.');
+      setError(err instanceof Error ? err.message : 'Failed to save job. Please try again later.');
     } finally {
       setIsAdding(false);
       setIsUpdating(false);
@@ -140,7 +140,7 @@ export default function Job() {
       setSelectedJob(null);
     } catch (err: any) {
       console.error('Error deleting job:', err);
-      setError(err.response?.data?.error || 'Failed to delete job. Please try again later.');
+      setError(err instanceof Error ? err.message : 'Failed to delete job. Please try again later.');
     } finally {
       setIsDeleting(false);
     }

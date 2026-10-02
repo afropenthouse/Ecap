@@ -34,7 +34,6 @@ enum AppraisalType {
 model Organization {
   id        String   @id @default(uuid())
   name      String
-  slug      String   @unique
   email     String
   // Add branding fields
   logoUrl   String?
@@ -53,9 +52,11 @@ model Organization {
   jobRequirements JobCompetency[]
   assessmentRatings AssessmentRating[]
   assessorAssignments AssessorAssignment[]
+  assessorDepartments AssessorDepartment[]
   employeeJobAssignments EmployeeJobAssignment[]
   passwordResetTokens PasswordResetToken[] @relation("OrgPasswordResetTokens")
   emailVerificationTokens EmailVerificationToken[] @relation("OrgEmailVerificationTokens")
+  invitations UserInvitation[]
   performanceAppraisals PerformanceAppraisal[]
   performanceAppraisalQuestions PerformanceAppraisalQuestion[]
   performanceAppraisalResponses PerformanceAppraisalResponse[]
@@ -72,6 +73,7 @@ model User {
   phone           String?
   profilePictureUrl String?
   role            Role
+  isActive        Boolean  @default(true)
   isLockedUntil   DateTime?
   emailVerifiedAt DateTime?
   onboardingCompleted Boolean @default(false)
@@ -87,7 +89,9 @@ model User {
   assessorAppraisals PerformanceAppraisal[] @relation("AssessorAppraisals")
   passwordResetTokens PasswordResetToken[] @relation("UserPasswordResetTokens")
   emailVerificationTokens EmailVerificationToken[] @relation("UserEmailVerificationTokens")
+  invitations UserInvitation[]
   jobAssignments   EmployeeJobAssignment[]
+  assessorDepartments AssessorDepartment[]
 
   @@unique([organizationId, email])
 }
@@ -101,6 +105,20 @@ model Department {
   updatedAt      DateTime @updatedAt
 
   jobs Job[]
+  assessors AssessorDepartment[]
+}
+
+model AssessorDepartment {
+  id             String @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assessorId     String
+  assessor       User @relation(fields: [assessorId], references: [id], onDelete: Cascade)
+  departmentId   String
+  department     Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessorId, departmentId])
+  @@index([organizationId, assessorId])
 }
 
 model Job {
@@ -177,6 +195,8 @@ model JobCompetency {
   competencyId String
   competency   Competency @relation(fields: [competencyId], references: [id])
   requiredLevel Int
+
+  @@unique([organizationId, jobId, competencyId])
 }
 
 model Assessment {
@@ -204,8 +224,10 @@ model AssessmentRating {
   assessment     Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   competencyId   String
   competency     Competency @relation(fields: [competencyId], references: [id])
-  rating         Int
+  rating         Float
   comment        String?
+
+  @@unique([organizationId, assessmentId, competencyId])
 }
 
 model AssessorAssignment {
@@ -244,6 +266,20 @@ model EmailVerificationToken {
   expiresAt        DateTime
   usedAt           DateTime?
   createdAt        DateTime @default(now())
+
+  @@index([organizationId, userId])
+}
+
+model UserInvitation {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash      String   @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime @default(now())
 
   @@index([organizationId, userId])
 }

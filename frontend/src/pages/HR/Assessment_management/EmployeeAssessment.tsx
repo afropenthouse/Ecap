@@ -9,6 +9,7 @@ import {
   getAssessments,
   getDepartments,
   getCompetencies,
+  getProficiencyLevels,
   listUsers,
   createAssessorAssessment,
   updateAssessmentStatus,
@@ -53,6 +54,8 @@ interface Competency {
   description?: string | null;
   category?: { id: string; name: string; domain?: { id: string; domainName: string } };
 }
+
+interface ProficiencyLevel { id: string; levelNumber: number; label: string; description?: string | null }
 
 interface Department {
   id: string;
@@ -138,6 +141,7 @@ export default function EmployeeAssessment() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [competencies, setCompetencies] = useState<Competency[]>([]);
+  const [proficiencyLevels, setProficiencyLevels] = useState<ProficiencyLevel[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -174,24 +178,26 @@ export default function EmployeeAssessment() {
         setError(null);
         
         // Fetch all necessary data in parallel
-        const [assessmentsData, deptRes, compRes, usersRes, jobsData, assignmentsData] = await Promise.all([
+        const [assessmentsData, deptRes, compRes, usersRes, jobsData, assignmentsData, levelsData] = await Promise.all([
           getAssessments(),
           getDepartments(),
           getCompetencies(),
           listUsers(),
           getJobs(),
-          getEmployeeJobAssignments()
+          getEmployeeJobAssignments(),
+          getProficiencyLevels()
         ]);
         
         // Set state with fetched data
         setDepartments(deptRes || []);
         setCompetencies(compRes || []);
+        setProficiencyLevels([...(levelsData || [])].sort((a, b) => a.levelNumber - b.levelNumber));
         setUsers(usersRes || []);
         setJobs(jobsData || []);
         setJobAssignments(assignmentsData || []);
         
         // Process assessments
-        const backendAssessments = assessmentsData || [];
+        const backendAssessments = (assessmentsData || []).filter(assessment => assessment.type === 'ASSESSOR');
         const mappedAssessments: UIAssessment[] = backendAssessments.map(assessment => {
           const employee = users.find(u => u.id === assessment.employeeId);
           const assessor = assessment.assessorId ? users.find(u => u.id === assessment.assessorId) : null;
@@ -806,11 +812,7 @@ export default function EmployeeAssessment() {
                               className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white"
                             >
                               <option value="0">Select rating</option>
-                              <option value="1">Basic - Needs Improvement</option>
-                              <option value="2">Intermediate - Developing</option>
-                              <option value="3">Advanced - Proficient</option>
-                              <option value="4">Expert - Mastery Demonstrated</option>
-                              <option value="5">Outstanding - Exceptional Performance</option>
+                              {proficiencyLevels.map(level => <option key={level.id} value={level.levelNumber}>{level.levelNumber} - {level.label}</option>)}
                             </select>
                           </div>
                           <textarea

@@ -1,29 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ThemeToggleButton } from "../../components/common/ThemeToggleButton";
 import { useAuth } from "../../context/AuthContext";
-import { listOrganizationsPublic } from "../../api/services";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
-  const [slug, setSlug] = useState("");
-  const [organizations, setOrganizations] = useState<{ id: string; name: string; slug: string; logoUrl?: string }[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const { resetPassword } = useAuth();
-
-  // Load organizations for dropdown
-  useEffect(() => {
-    (async () => {
-      try {
-        const orgs = await listOrganizationsPublic();
-        setOrganizations(orgs);
-      } catch (err) {
-        console.warn("Failed to load organizations; fallback to slug input");
-      }
-    })();
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +17,7 @@ export default function ForgotPassword() {
     setLoading(true);
 
     try {
-      await resetPassword(email, slug);
+      await resetPassword(email);
       setSuccess(true);
     } catch (error: any) {
       console.error("Error in password reset:", error);
@@ -57,7 +42,7 @@ export default function ForgotPassword() {
             Reset your password
           </h2>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Enter your email and organization to receive a reset link
+            Enter your work email to receive a reset link
           </p>
         </div>
 
@@ -94,39 +79,6 @@ export default function ForgotPassword() {
               />
             </div>
 
-            <div>
-              {organizations.length > 0 ? (
-                <div>
-                  <label htmlFor="org-select" className="sr-only">Organization</label>
-                  <select
-                    id="org-select"
-                    required
-                    className="appearance-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-800 mb-4"
-                    value={slug}
-                    onChange={(e) => setSlug(e.target.value)}
-                  >
-                    <option value="" disabled>Select your organization</option>
-                    {organizations.map((o) => (
-                      <option key={o.id} value={o.slug}>{o.name}</option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <div>
-                  <label htmlFor="slug" className="sr-only">Organization slug</label>
-                  <input
-                    id="slug"
-                    name="slug"
-                    type="text"
-                    required
-                    className="appearance-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-white rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-800 mb-4"
-                    placeholder="Organization slug (e.g., acme)"
-                    value={slug}
-                    onChange={(e) => setSlug(e.target.value)}
-                  />
-                </div>
-              )}
-            </div>
           </div>
 
           <div>

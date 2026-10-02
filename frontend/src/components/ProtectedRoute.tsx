@@ -33,11 +33,11 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
     if (!hasAllowedRole) {
       // Redirect to appropriate route based on user's role
       if (user.roles.includes('hr')) {
-        return <Navigate to="/hr/dashboard" replace />;
+        return <Navigate to="/dashboard" replace />;
       } else if (user.roles.includes('assessor')) {
-        return <Navigate to="/assessor/dashboard" replace />;
+        return <Navigate to="/dashboard" replace />;
       } else {
-        return <Navigate to="/employee/dashboard" replace />;
+        return <Navigate to="/dashboard" replace />;
       }
     }
   }

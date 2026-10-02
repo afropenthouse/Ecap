@@ -13,7 +13,6 @@ interface AssignmentRow {
   assessorId: string;
   employeeName: string;
   jobTitle?: string;
-  departmentName?: string;
   createdAt?: string;
 }
 
@@ -68,7 +67,6 @@ export default function EmployeeAssessorAssign() {
           assessorId: a.assessorId,
           employeeName,
           jobTitle: job?.title,
-          departmentName: job?.department?.name || undefined,
           createdAt: jobRec?.startDate,
         };
       });
@@ -85,7 +83,6 @@ export default function EmployeeAssessorAssign() {
   // Filter assignments based on search term
   const filteredAssignments = assignments.filter(assignment =>
     assignment.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (assignment.departmentName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (assignment.jobTitle || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -106,7 +103,7 @@ export default function EmployeeAssessorAssign() {
         <input
           type="text"
           className="block w-full rounded-lg border border-gray-200 bg-white py-2 pl-10 pr-3 text-sm placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-800 dark:bg-white/[0.03] dark:text-white dark:placeholder-gray-400"
-          placeholder="Search by employee, department, or job role..."
+          placeholder="Search by employee or job role..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
@@ -144,9 +141,6 @@ export default function EmployeeAssessorAssign() {
                     Employee Details
                   </th>
                   <th scope="col" className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Department
-                  </th>
-                  <th scope="col" className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
                     Job Role
                   </th>
                   <th scope="col" className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -166,9 +160,6 @@ export default function EmployeeAssessorAssign() {
                           <div className="font-medium text-gray-900 dark:text-white">{assignment.employeeName}</div>
                         </div>
                       </div>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-900 dark:text-white">
-                      {assignment.departmentName ?? '—'}
                     </td>
                     <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-900 dark:text-white">
                       {assignment.jobTitle ?? '—'}

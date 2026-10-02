@@ -1,6 +1,5 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import authRouter from './routes/auth';
 import usersRouter from './routes/users';
 import rolesRouter from './routes/roles';
@@ -17,39 +16,20 @@ import employeesRouter from './routes/employees';
 import appraisalsRouter from './routes/appraisals';
 import { getTransporter } from './utils/email';
 
-dotenv.config();
-
 const app = express();
 
 app.use(express.json());
 
 // Explicit CORS headers for all routes (preflight and actual)
 // Allowed frontend origins (add any additional production frontends here)
-const allowedOrigins = [
+const configuredOrigins = (process.env.CORS_ORIGIN || '').split(',').map(origin => origin.trim()).filter(Boolean);
+const allowedOrigins = configuredOrigins.length ? configuredOrigins : [
   'https://ecap-project.vercel.app',
   'https://ecap-project.onrender.com',
   'http://localhost:5173',
   'ecap-project.vercel.app',
 ];
 
-app.use((req, res, next) => {
-  const origin = (req.headers.origin as string) || '';
-  const allowOrigin = allowedOrigins.includes(origin) ? origin : '*';
-  res.header('Access-Control-Allow-Origin', allowOrigin);
-  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  const reqAllowHeaders = (req.headers['access-control-request-headers'] as string) || 'Content-Type, Authorization';
-  res.header('Access-Control-Allow-Headers', reqAllowHeaders);
-  // If credentials are used, also set Access-Control-Allow-Credentials accordingly
-  if (allowOrigin !== '*') {
-    res.header('Access-Control-Allow-Credentials', 'true');
-  }
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(204);
-  }
-  next();
-});
-
-// CORS options using a dynamic origin function to respect the whitelist
 const corsOptions: cors.CorsOptions = {
   origin: (origin, cb) => {
     // If no origin (e.g., server-to-server), allow it
@@ -61,7 +41,6 @@ const corsOptions: cors.CorsOptions = {
   credentials: true,
 };
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
 
 // Health check
 app.get('/health', (_req: Request, res: Response) => {

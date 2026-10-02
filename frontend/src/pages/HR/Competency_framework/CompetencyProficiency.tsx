@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { UserIcon, PlusIcon, InfoIcon } from "../../../icons";
-import { getProficiencyLevels, createProficiencyLevel, ProficiencyLevel } from "../../../api/services";
+import { getProficiencyLevels, createProficiencyLevel, updateProficiencyLevel, deleteProficiencyLevel, ProficiencyLevel } from "../../../api/services";
 
 
 export default function CompetencyProficiency() {
@@ -15,6 +15,7 @@ export default function CompetencyProficiency() {
     description: ""
   });
   const [isAdding, setIsAdding] = useState(false);
+  const [selectedLevel, setSelectedLevel] = useState<ProficiencyLevel | null>(null);
 
   useEffect(() => {
     const fetchLevels = async () => {
@@ -50,21 +51,39 @@ export default function CompetencyProficiency() {
         setError('Please provide a valid level number and label.');
         return;
       }
-      const created = await createProficiencyLevel({
-        levelNumber: formData.levelNumber,
-        label: formData.label.trim(),
-        description: formData.description.trim() || undefined,
-      });
-      const newLevel = created as ProficiencyLevel;
-      const updated = [...levels, newLevel].sort((a, b) => a.levelNumber - b.levelNumber);
-      setLevels(updated);
+      const payload = { levelNumber: formData.levelNumber, label: formData.label.trim(), description: formData.description.trim() || undefined };
+      if (selectedLevel) {
+        await updateProficiencyLevel(selectedLevel.id, payload);
+        setLevels(levels.map(level => level.id === selectedLevel.id ? { ...level, ...payload } : level).sort((a, b) => a.levelNumber - b.levelNumber));
+      } else {
+        const created = await createProficiencyLevel(payload);
+        setLevels([...levels, created as ProficiencyLevel].sort((a, b) => a.levelNumber - b.levelNumber));
+      }
       setShowAddModal(false);
+      setSelectedLevel(null);
       setFormData({ levelNumber: 0, label: "", description: "" });
     } catch (err) {
       console.error("Error adding proficiency level:", err);
-      setError('Failed to add proficiency level. Please try again later.');
+      setError(err instanceof Error ? err.message : 'Failed to save proficiency level. Please try again.');
     } finally {
       setIsAdding(false);
+    }
+  };
+
+  const openEdit = (level: ProficiencyLevel) => {
+    setSelectedLevel(level);
+    setFormData({ levelNumber: level.levelNumber, label: level.label, description: level.description || "" });
+    setShowAddModal(true);
+  };
+
+  const handleDelete = async (level: ProficiencyLevel) => {
+    if (!window.confirm(`Delete proficiency level "${level.label}"?`)) return;
+    try {
+      await deleteProficiencyLevel(level.id);
+      setLevels(levels.filter(item => item.id !== level.id));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete this level. It may be in use.");
     }
   };
 
@@ -127,6 +146,7 @@ export default function CompetencyProficiency() {
                   <th scope="col" className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Level</th>
                   <th scope="col" className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Label</th>
                   <th scope="col" className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Description</th>
+                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-800 dark:bg-white/[0.03]">
@@ -144,6 +164,7 @@ export default function CompetencyProficiency() {
                       </div>
                     </td>
                     <td className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400">{level.description || ''}</td>
+                    <td className="px-4 py-4 text-right text-sm"><button onClick={() => openEdit(level)} className="mr-3 font-medium text-blue-600 hover:underline">Edit</button><button onClick={() => handleDelete(level)} className="font-medium text-red-600 hover:underline">Delete</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -161,7 +182,7 @@ export default function CompetencyProficiency() {
             {searchTerm ? 'Try adjusting your search' : 'Create your first proficiency level'}
           </p>
           <button 
-            onClick={() => setShowAddModal(true)}
+                  onClick={() => { setSelectedLevel(null); setFormData({ levelNumber: 0, label: "", description: "" }); setShowAddModal(true); }}
             className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
           >
             <PlusIcon className="size-0" />
@@ -175,8 +196,8 @@ export default function CompetencyProficiency() {
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm dark:bg-gray-900/80" />
           <div className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-lg dark:bg-gray-800">
-            <h2 className="text-xl font-bold text-center text-gray-900 dark:text-white">New Proficiency Level</h2>
-            <p className="mt-1 text-center text-sm text-gray-500 dark:text-gray-400">Create a new proficiency level</p>
+            <h2 className="text-xl font-bold text-center text-gray-900 dark:text-white">{selectedLevel ? "Edit Proficiency Level" : "New Proficiency Level"}</h2>
+            <p className="mt-1 text-center text-sm text-gray-500 dark:text-gray-400">{selectedLevel ? "Update this organisation proficiency level" : "Create a new proficiency level"}</p>
             
             <form onSubmit={handleSubmit} className="mt-6 space-y-4 max-h-[70vh] overflow-y-auto pr-2 pl-1">
               <div>
@@ -219,7 +240,7 @@ export default function CompetencyProficiency() {
               <div className="flex items-center justify-end gap-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => { setShowAddModal(false); setSelectedLevel(null); }}
                   className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.05]"
                   disabled={isAdding}
                 >
@@ -236,7 +257,7 @@ export default function CompetencyProficiency() {
                       Adding...
                     </>
                   ) : (
-                    'Add Level'
+                    selectedLevel ? 'Save Changes' : 'Add Level'
                   )}
                 </button>
               </div>
@@ -245,7 +266,6 @@ export default function CompetencyProficiency() {
         </div>
       )}
 
-      {/* Edit/Delete disabled for proficiency levels; management is add-only via backend */}
     </div>
   );
 }

@@ -192,7 +192,7 @@ export default function EmployeeAssessment() {
         setJobAssignments(assignmentsData || []);
         
         // Process assessments - USE THE FETCHED DATA, NOT STATE
-        const backendAssessments = assessmentsData || [];
+        const backendAssessments = (assessmentsData || []).filter(assessment => assessment.type === 'ASSESSOR');
         const mappedAssessments: UIAssessment[] = backendAssessments.map(assessment => {
           // Use usersRes instead of users state variable
           const employee = usersRes?.find(u => u.id === assessment.employeeId);

@@ -57,12 +57,13 @@ export interface UserSummary {
   firstName: string | null;
   lastName: string | null;
   role: 'HR' | 'ASSESSOR' | 'EMPLOYEE';
+  accountStatus?: 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'DEACTIVATED';
+  isActive?: boolean;
 }
 
 export interface Organization {
   id: string;
   name: string;
-  slug: string;
   email?: string;
   logoUrl?: string;
   address?: string;
@@ -94,6 +95,8 @@ export interface EmployeeDetail {
   phone?: string | null;
   profilePictureUrl?: string | null;
   isLockedUntil?: string | null;
+  role?: 'EMPLOYEE' | 'ASSESSOR';
+  isActive?: boolean;
   onboardingCompleted?: boolean;
   departmentIds: string[];
   departments: Array<{ id: string; name: string }>;
@@ -117,6 +120,7 @@ export const getUserProfile = (id: string) => api.get<{
   role: string;
   isLockedUntil?: string | null;
   onboardingCompleted?: boolean;
+  departments?: Array<{ id: string; name: string }>;
 }>('/users/' + id);
 
 // Competencies APIs
@@ -150,9 +154,9 @@ export const deleteDepartment = (id: string) => api.delete(`/departments/${id}`)
 
 // Jobs APIs
 export const getJobs = () => api.get<Job[]>('/jobs');
-export const createJob = (payload: { title: string; description?: string; departmentId?: string }) =>
+export const createJob = (payload: { title: string; description?: string; departmentId?: string | null }) =>
   api.post<Job>('/jobs', payload);
-export const updateJob = (id: string, payload: { title?: string; description?: string; departmentId?: string }) =>
+export const updateJob = (id: string, payload: { title?: string; description?: string; departmentId?: string | null }) =>
   api.put<Job>(`/jobs/${id}`, payload);
 export const deleteJob = (id: string) => api.delete(`/jobs/${id}`);
 
@@ -181,6 +185,8 @@ export const createAssessorAssessment = (employeeId: string) => api.post<Assessm
 export const updateAssessmentStatus = (id: string, status: Assessment['status']) => api.put<Assessment>(`/assessments/${id}/status`, { status });
 export const addAssessmentRating = (id: string, payload: { competencyId: string; rating: number; comment?: string }) =>
   api.post<AssessmentRating>(`/assessments/${id}/ratings`, payload);
+export const finalizeConsensusAssessment = (employeeId: string) =>
+  api.post<Assessment>(`/assessments/consensus/${employeeId}`);
 export const getAssessmentRatings = (assessmentId: string) =>
   api.get<AssessmentRating[]>(`/assessments/${assessmentId}/ratings`);
 
@@ -188,8 +194,10 @@ export const getAssessmentRatings = (assessmentId: string) =>
 export const listUsers = () => api.get<UserSummary[]>('/users');
 export const getUserById = (id: string) => api.get<UserSummary>(`/users/${id}`);
 export const updateUserRole = (id: string, role: 'EMPLOYEE' | 'ASSESSOR' | 'HR') => api.put(`/roles/${id}`, { role });
+export const setOrganizationUserActive = (id: string, isActive: boolean) => api.patch<{ id: string; isActive: boolean }>(`/users/${id}/activation`, { isActive });
+export const deleteOrganizationUser = (id: string) => api.delete(`/users/${id}`);
 // Update user profile (HR can update any user; Employee can update own with 12h lock)
-export const updateUser = (id: string, payload: { firstName?: string; lastName?: string; phone?: string; profilePictureUrl?: string }) =>
+export const updateUser = (id: string, payload: { firstName?: string; lastName?: string; phone?: string; profilePictureUrl?: string; departmentIds?: string[] }) =>
   api.put<{ id: string }>(`/users/${id}`, payload);
 
 // Assessor Assignments APIs
@@ -246,6 +254,7 @@ export interface EmployeeJobAssignment {
   employeeId: string;
   jobId: string;
   startDate?: string;
+  createdAt?: string;
   job?: Job;
   employee?: { id: string; firstName: string | null; lastName: string | null; email: string };
 }
@@ -262,33 +271,22 @@ export const getEmployeeJobAssignments = (employeeId?: string) => {
   const url = employeeId ? `/job-assignments?employeeId=${employeeId}` : '/job-assignments';
   return api.get<EmployeeJobAssignment[]>(url);
 };
-export const getMyJobAssignment = async (): Promise<EmployeeJobAssignment | null> => {
-  try {
-    return await api.get<EmployeeJobAssignment>('/job-assignments/current');
-  } catch (error) {
-    return null;
-  }
-};
+export const getMyJobAssignment = () => api.get<EmployeeJobAssignment | null>('/job-assignments/current');
 
 // Organization APIs
 export const getMyOrganization = () => api.get<Organization>('/organizations/me');
-export const listOrganizationsPublic = () => api.get<Pick<Organization, 'id' | 'name' | 'slug' | 'logoUrl'>[]>('/organizations/public');
+export const listOrganizationsPublic = () => api.get<Pick<Organization, 'id' | 'name' | 'logoUrl'>[]>('/organizations/public');
 export const updateMyOrganization = (payload: { name?: string; email?: string; logoUrl?: string; address?: string }) => api.put<Organization>('/organizations/me', payload);
+export const inviteOrganizationMember = (payload: { firstName: string; lastName: string; email: string; role: 'EMPLOYEE' | 'ASSESSOR' | 'HR' }) => api.post('/organizations/me/invitations', payload);
 export async function signupOrganizationAdmin(payload: {
   organizationName: string;
   organizationEmail: string;
-  slug: string;
   adminEmail: string;
   adminPassword: string;
+  firstName?: string;
+  lastName?: string;
 }) {
   return apiFetch('/auth/org/signup', {
-    method: 'POST',
-    body: payload,
-  });
-}
-
-export async function signupIndividual(payload: { email: string; password: string; slug: string; firstName?: string; lastName?: string }) {
-  return apiFetch('/auth/individual/signup', {
     method: 'POST',
     body: payload,
   });
@@ -301,10 +299,14 @@ export async function verifyEmail(token: string) {
   });
 }
 
-export async function resendEmailVerification(email: string, slug: string) {
+export async function verifyEmailCode(email: string, code: string) {
+  return apiFetch('/auth/verify-email-code', { method: 'POST', body: { email, code } });
+}
+
+export async function resendEmailVerification(email: string) {
   return apiFetch('/auth/verify-email/resend', {
     method: 'POST',
-    body: { email, slug },
+    body: { email },
   });
 }
 

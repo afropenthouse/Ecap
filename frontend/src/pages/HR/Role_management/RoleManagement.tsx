@@ -2,15 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   UserIcon,
   BoxCubeIcon,
-  TableIcon,
-  GroupIcon
+  TableIcon
 } from "../../../icons";
 
 // Import components
 import UsersTab from './components/UsersTab';
 import DepartmentsTab from './components/DepartmentsTab';
 import JobRolesTab from './components/JobRolesTab';
-import AssessorsTab from './components/AssessorsTab';
 import { listUsers, getDepartments, getJobs } from '../../../api/services';
 
 // Types
@@ -18,6 +16,10 @@ interface User {
   id: string;
   email: string;
   roles: string[];
+  firstName?: string | null;
+  lastName?: string | null;
+  accountStatus?: 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'DEACTIVATED';
+  isActive?: boolean;
 }
 
 interface Department {
@@ -32,22 +34,14 @@ interface JobRole {
   description: string | null;
 }
 
-interface Employee {
-  id: string;
-  user_id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  departments?: any[];
-}
-
 const RoleManagement: React.FC = () => {
   // Tab state
-  const [activeTab, setActiveTab] = useState<'users' | 'departments' | 'jobRoles' | 'assessors'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'departments' | 'jobRoles'>('users');
 
   // Users state
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [usersError, setUsersError] = useState('');
 
   // Departments state
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -57,19 +51,17 @@ const RoleManagement: React.FC = () => {
   const [jobRoles, setJobRoles] = useState<JobRole[]>([]);
   const [loadingJobRoles, setLoadingJobRoles] = useState(false);
 
-  // Assessors state
-  const [assessors, setAssessors] = useState<Employee[]>([]);
-
   // Fetch users from backend
   const fetchUsers = async () => {
     setLoadingUsers(true);
     try {
       const backendUsers = await listUsers();
-      const normalized = backendUsers.map(u => ({ id: u.id, email: u.email, roles: [u.role.toLowerCase()] }));
+      const normalized = backendUsers.map(u => ({ id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName, roles: [u.role.toLowerCase()], accountStatus: u.accountStatus, isActive: u.isActive }));
       setUsers(normalized);
+      setUsersError('');
     } catch (err) {
       console.error('Failed to load users:', err);
-      setUsers([]);
+      setUsersError(err instanceof Error ? err.message : 'Unable to refresh team members.');
     } finally {
       setLoadingUsers(false);
     }
@@ -94,26 +86,6 @@ const RoleManagement: React.FC = () => {
     }
   }, []);
 
-  // Load assessors from backend
-  const fetchAssessors = async () => {
-    try {
-      const backendUsers = await listUsers();
-      const assessorUsers = backendUsers.filter(u => u.role === 'ASSESSOR');
-      const normalizedAssessors: Employee[] = assessorUsers.map(u => ({
-        id: u.id,
-        user_id: u.id,
-        first_name: u.firstName || '',
-        last_name: u.lastName || '',
-        email: u.email,
-        departments: [],
-      }));
-      setAssessors(normalizedAssessors);
-    } catch (err) {
-      console.error('Failed to load assessors:', err);
-      setAssessors([]);
-    }
-  };
-
   useEffect(() => {
     // Load users when the tab opens
     fetchUsers().catch(err => console.error('Initial users fetch failed:', err));
@@ -123,10 +95,6 @@ const RoleManagement: React.FC = () => {
     // Load departments when the Departments tab becomes active
     if (activeTab === 'departments') {
       fetchDepartments().catch(err => console.error('Initial departments fetch failed:', err));
-    }
-    // Load assessors when the Assessors tab becomes active
-    if (activeTab === 'assessors') {
-      fetchAssessors().catch(err => console.error('Initial assessors fetch failed:', err));
     }
     // Load job roles when the Job Roles tab becomes active
     if (activeTab === 'jobRoles') {
@@ -164,11 +132,11 @@ const RoleManagement: React.FC = () => {
   }
 
   return (
-    <div className="h-full overflow-auto p-6">
+    <div className="h-full min-w-0 w-full overflow-x-hidden overflow-y-auto p-6">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white/90">Role Management</h1>
-          <p className="mt-1 text-gray-600 dark:text-gray-400">Manage users, departments, job roles, and assessors</p>
+          <p className="mt-1 text-gray-600 dark:text-gray-400">Manage users, departments, and job roles</p>
         </div>
       </div>
 
@@ -214,21 +182,6 @@ const RoleManagement: React.FC = () => {
               Job Roles
             </button>
           </li>
-          <li>
-            <button
-              onClick={() => {
-                setActiveTab('assessors');
-              }}
-              className={`inline-flex items-center justify-center p-4 rounded-t-lg ${
-                activeTab === 'assessors'
-                  ? 'text-blue-600 border-b-2 border-blue-600 dark:text-white dark:border-blue-500'
-                  : 'hover:text-gray-600 hover:border-gray-300 dark:hover:text-white'
-              }`}
-            >
-              <GroupIcon className="mr-2 size-5" />
-              Assessors
-            </button>
-          </li>
         </ul>
       </div>
 
@@ -237,9 +190,8 @@ const RoleManagement: React.FC = () => {
         <UsersTab
           users={users}
           loadingUsers={loadingUsers}
+          usersError={usersError}
           fetchUsers={fetchUsers}
-          fetchAssessors={fetchAssessors}
-          setUsers={setUsers}
         />
       )}
 
@@ -263,14 +215,6 @@ const RoleManagement: React.FC = () => {
         />
       )}
 
-      {/* Assessors Tab Content */}
-      {activeTab === 'assessors' && (
-        <AssessorsTab
-          assessors={assessors}
-          fetchAssessors={fetchAssessors}
-          fetchUsers={fetchUsers}
-        />
-      )}
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { listEmployees, uploadImage, updateUser, createEmployee, getDepartments, updateEmployeeDepartments, type EmployeeDetail, type Department } from '../../../api/services';
+import { listEmployees, type Department } from '../../../api/services';
 
 interface Employee {
   id: string;
@@ -12,48 +12,29 @@ interface Employee {
   departmentIds: string[];
   departments: Department[];
   isLockedUntil?: string | null;
-}
-
-interface NewEmployee {
-  email: string;
-  firstName: string;
-  lastName: string;
-  phone?: string;
-  departmentIds: string[];
+  role: 'EMPLOYEE' | 'ASSESSOR';
+  isActive: boolean;
 }
 
 const EmployeeDetails: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [newEmployee, setNewEmployee] = useState<NewEmployee>({
-    email: '',
-    firstName: '',
-    lastName: '',
-    phone: '',
-    departmentIds: []
-  });
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'ALL' | 'EMPLOYEE' | 'ASSESSOR'>('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 12;
 
-  // Load employees and departments
+  // Load organization people for the read-only directory.
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true);
         setError(null);
-        
-        const [employeesData, departmentsData] = await Promise.all([
-          listEmployees(),
-          getDepartments()
-        ]);
-
-        const mappedEmployees: Employee[] = employeesData.map(emp => ({
+        const employeesData = await listEmployees();
+        setEmployees(employeesData.map(emp => ({
           id: emp.id,
           email: emp.email,
           firstName: emp.firstName,
@@ -62,11 +43,10 @@ const EmployeeDetails: React.FC = () => {
           profilePictureUrl: emp.profilePictureUrl,
           departmentIds: emp.departmentIds || [],
           departments: emp.departments || [],
-          isLockedUntil: emp.isLockedUntil
-        }));
-
-        setEmployees(mappedEmployees);
-        setDepartments(departmentsData);
+          isLockedUntil: emp.isLockedUntil,
+          role: emp.role || 'EMPLOYEE',
+          isActive: emp.isActive !== false,
+        })));
       } catch (e: any) {
         console.error('Failed to load data', e);
         setError(e?.message || 'Failed to load employees');
@@ -74,84 +54,8 @@ const EmployeeDetails: React.FC = () => {
         setLoading(false);
       }
     };
-
     loadData();
   }, []);
-
-  // Handle file change
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 2 * 1024 * 1024) {
-      setError('File size must be less than 2MB');
-      return;
-    }
-
-    setAvatarFile(file);
-  };
-
-  // Add employee
-  const handleAddEmployee = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      // Upload profile picture if provided
-      let profilePictureUrl: string | undefined = undefined;
-      if (avatarFile) {
-        const uploaded = await uploadImage(avatarFile, 'avatars');
-        profilePictureUrl = uploaded.url;
-      }
-
-      // Create employee
-      const created = await createEmployee({
-        email: newEmployee.email,
-        firstName: newEmployee.firstName,
-        lastName: newEmployee.lastName,
-        phone: newEmployee.phone,
-        profilePictureUrl,
-      });
-
-      // Assign departments if any selected
-      if (newEmployee.departmentIds.length > 0) {
-        await updateEmployeeDepartments(created.id, { departmentIds: newEmployee.departmentIds });
-      }
-
-      // Reload employees to get updated data with departments
-      const employeesData = await listEmployees();
-      const mappedEmployees: Employee[] = employeesData.map(emp => ({
-        id: emp.id,
-        email: emp.email,
-        firstName: emp.firstName,
-        lastName: emp.lastName,
-        phone: emp.phone,
-        profilePictureUrl: emp.profilePictureUrl,
-        departmentIds: emp.departmentIds || [],
-        departments: emp.departments || [],
-        isLockedUntil: emp.isLockedUntil
-      }));
-
-      setEmployees(mappedEmployees);
-      setShowAddModal(false);
-      
-      // Reset form
-      setNewEmployee({
-        email: '',
-        firstName: '',
-        lastName: '',
-        phone: '',
-        departmentIds: []
-      });
-      setAvatarFile(null);
-    } catch (error: any) {
-      console.error('Error adding employee:', error);
-      setError(error?.message || 'Failed to add employee');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   // View employee
   const handleViewEmployee = (employeeId: string) => {
@@ -162,114 +66,41 @@ const EmployeeDetails: React.FC = () => {
     }
   };
 
-  // Edit employee
-  const handleEditEmployee = (employeeId: string) => {
-    const employeeToEdit = employees.find(emp => emp.id === employeeId);
-    if (employeeToEdit) {
-      setSelectedEmployee(employeeToEdit);
-      setShowEditModal(true);
-    }
-  };
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredEmployees = employees.filter(person => {
+    const matchesRole = roleFilter === 'ALL' || person.role === roleFilter;
+    const searchableText = `${person.firstName} ${person.lastName} ${person.email} ${person.phone || ''} ${person.departments.map(department => department.name).join(' ')}`.toLowerCase();
+    return matchesRole && (!normalizedSearch || searchableText.includes(normalizedSearch));
+  });
+  const pageCount = Math.max(1, Math.ceil(filteredEmployees.length / pageSize));
+  const visiblePage = Math.min(currentPage, pageCount);
+  const pageEmployees = filteredEmployees.slice((visiblePage - 1) * pageSize, visiblePage * pageSize);
+  const activeCount = employees.filter(person => person.isActive).length;
+  const employeeCount = employees.filter(person => person.role === 'EMPLOYEE' && person.isActive).length;
+  const assessorCount = employees.filter(person => person.role === 'ASSESSOR' && person.isActive).length;
 
-  // Update employee
-  const handleUpdateEmployee = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedEmployee) return;
-    
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      let profilePictureUrl: string | undefined = undefined;
-      if (avatarFile) {
-        const result = await uploadImage(avatarFile, 'avatars');
-        profilePictureUrl = result.url;
-      }
-
-      // Update basic employee info
-      await updateUser(selectedEmployee.id, {
-        firstName: selectedEmployee.firstName,
-        lastName: selectedEmployee.lastName,
-        phone: selectedEmployee.phone || '',
-        profilePictureUrl,
-      });
-
-      // Update departments if changed
-      await updateEmployeeDepartments(selectedEmployee.id, { 
-        departmentIds: selectedEmployee.departmentIds 
-      });
-
-      // Reload employees
-      const employeesData = await listEmployees();
-      const mappedEmployees: Employee[] = employeesData.map(emp => ({
-        id: emp.id,
-        email: emp.email,
-        firstName: emp.firstName,
-        lastName: emp.lastName,
-        phone: emp.phone,
-        profilePictureUrl: emp.profilePictureUrl,
-        departmentIds: emp.departmentIds || [],
-        departments: emp.departments || [],
-        isLockedUntil: emp.isLockedUntil
-      }));
-
-      setEmployees(mappedEmployees);
-      setShowEditModal(false);
-      setAvatarFile(null);
-    } catch (error: any) {
-      console.error('Error updating employee:', error);
-      setError(error?.message || 'Failed to update employee');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Toggle department selection
-  const toggleDepartment = (departmentId: string, isSelected: boolean) => {
-    if (isSelected) {
-      setNewEmployee(prev => ({
-        ...prev,
-        departmentIds: prev.departmentIds.filter(id => id !== departmentId)
-      }));
-    } else {
-      setNewEmployee(prev => ({
-        ...prev,
-        departmentIds: [...prev.departmentIds, departmentId]
-      }));
-    }
-  };
-
-  // Toggle department selection for edit
-  const toggleDepartmentEdit = (departmentId: string, isSelected: boolean) => {
-    if (!selectedEmployee) return;
-
-    if (isSelected) {
-      setSelectedEmployee({
-        ...selectedEmployee,
-        departmentIds: selectedEmployee.departmentIds.filter(id => id !== departmentId)
-      });
-    } else {
-      setSelectedEmployee({
-        ...selectedEmployee,
-        departmentIds: [...selectedEmployee.departmentIds, departmentId]
-      });
-    }
-  };
+  useEffect(() => { setCurrentPage(1); }, [normalizedSearch, roleFilter]);
 
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white">
-          Employee Details
-        </h2>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-        >
-          <UserIcon className="w-4 h-4" />
-          Add Employee
-        </button>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">People directory</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Employee details</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Browse employees and assessors across your organization.</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {[
+          { label: 'Active people', value: activeCount, tone: 'blue' },
+          { label: 'Active employees', value: employeeCount, tone: 'violet' },
+          { label: 'Active assessors', value: assessorCount, tone: 'emerald' },
+        ].map(metric => <div key={metric.label} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{metric.label}</p>
+          <p className={`mt-1 text-2xl font-bold ${metric.tone === 'blue' ? 'text-blue-700 dark:text-blue-300' : metric.tone === 'violet' ? 'text-violet-700 dark:text-violet-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{loading ? '—' : metric.value.toLocaleString()}</p>
+        </div>)}
       </div>
 
       {/* Error message */}
@@ -279,250 +110,66 @@ const EmployeeDetails: React.FC = () => {
         </div>
       )}
 
-      {/* Loading indicator */}
-      {loading ? (
-        <div className="flex justify-center items-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
+        <label className="relative block w-full sm:max-w-md">
+          <span className="sr-only">Search people</span>
+          <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="pointer-events-none absolute left-3 top-1/2 size-5 -translate-y-1/2 text-gray-400"><path fillRule="evenodd" d="M8.5 3a5.5 5.5 0 103.478 9.76l3.631 3.632a.75.75 0 101.06-1.061l-3.631-3.632A5.5 5.5 0 008.5 3zM4.5 8.5a4 4 0 117.999 0 4 4 0 01-7.999 0z" clipRule="evenodd" /></svg>
+          <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search name, email, phone, department..." className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-4 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500" />
+        </label>
+        <div className="flex flex-wrap gap-2" aria-label="Filter by role">
+          {([['ALL', 'Everyone'], ['EMPLOYEE', 'Employees'], ['ASSESSOR', 'Assessors']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setRoleFilter(value)} aria-pressed={roleFilter === value} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${roleFilter === value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{label}</button>)}
         </div>
-      ) : (
-        /* Employee Grid - Horizontal Cards */
-        <div className="grid grid-cols-1 gap-6">
-          {employees.map((employee) => (
-            <div key={employee.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
-              <div className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-6 w-full">
-                    <div className="relative h-24 w-24 flex-shrink-0">
-                      {employee.profilePictureUrl ? (
-                        <img
-                          src={employee.profilePictureUrl}
-                          alt={`${employee.firstName} ${employee.lastName}`}
-                          className="h-full w-full rounded-full object-cover border-2 border-gray-200 dark:border-gray-700"
-                        />
-                      ) : (
-                        <div className="h-full w-full rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center border-2 border-gray-200 dark:border-gray-700">
-                          <UserIcon className="w-12 h-12 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center space-x-4 md:space-x-8 w-full">
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                          {employee.firstName} {employee.lastName}
-                        </h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          {employee.email}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Email</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                          {employee.email}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Phone</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                          {employee.phone || 'Not provided'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Departments</p>
-                        <div className="flex flex-wrap gap-1 mt-1 max-w-[300px]">
-                          {employee.departments.map((dept) => (
-                            <span
-                              key={`${employee.id}-dept-${dept.id}`}
-                              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 whitespace-normal break-words"
-                            >
-                              {dept.name}
-                            </span>
-                          ))}
-                          {employee.departments.length === 0 && (
-                            <span className="text-xs text-gray-500">No departments assigned</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+      </div>
+
+      {loading ? <div className="grid gap-4 md:grid-cols-2">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-52 animate-pulse rounded-2xl bg-white dark:bg-gray-800" />)}</div> : filteredEmployees.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center dark:border-gray-700 dark:bg-gray-900">
+          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300"><UserIcon className="size-7" /></div>
+          <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white">No people found</h3>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Try another search or change the role filter.</p>
+        </div>
+      ) : <>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {pageEmployees.map(person => (
+            <article key={person.id} className="group rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-900">
+              <div className="flex min-w-0 items-start gap-4">
+                {person.profilePictureUrl ? <img src={person.profilePictureUrl} alt={`${person.firstName} ${person.lastName}`} className="size-14 shrink-0 rounded-2xl object-cover ring-1 ring-gray-200 dark:ring-gray-700" /> : <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 text-lg font-bold text-blue-700 dark:from-blue-950 dark:to-indigo-950 dark:text-blue-200"><UserIcon className="size-7" /></div>}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="max-w-full truncate text-base font-bold text-gray-900 dark:text-white">{person.firstName} {person.lastName}</h3>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${person.role === 'ASSESSOR' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200'}`}>{person.role === 'ASSESSOR' ? 'Assessor' : 'Employee'}</span>
                   </div>
-                  <div className="flex space-x-4">
-                    <button
-                      onClick={() => handleViewEmployee(employee.id)}
-                      className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                    >
-                      View
-                    </button>
-                    <button
-                      onClick={() => handleEditEmployee(employee.id)}
-                      className="text-sm font-medium text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300"
-                    >
-                      Edit
-                    </button>
+                  <p className="mt-1 break-all text-sm text-gray-500 dark:text-gray-400">{person.email}</p>
+                </div>
+                <span aria-label={person.isActive ? 'Account active' : 'Account deactivated'} title={person.isActive ? 'Account active' : 'Account deactivated'} className={`mt-1 size-2.5 shrink-0 rounded-full ${person.isActive ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-4 border-t border-gray-100 pt-4 dark:border-gray-800">
+                <div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Phone</p><p className="mt-1 truncate text-sm text-gray-700 dark:text-gray-200">{person.phone || 'Not provided'}</p></div>
+                <div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Departments</p>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {person.departments.slice(0, 2).map(department => <span key={`${person.id}-${department.id}`} className="max-w-full truncate rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">{department.name}</span>)}
+                    {person.departments.length > 2 && <span className="rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">+{person.departments.length - 2}</span>}
+                    {person.departments.length === 0 && <span className="text-sm text-gray-500 dark:text-gray-400">None assigned</span>}
                   </div>
                 </div>
               </div>
-            </div>
+
+              <div className="mt-4 flex items-center justify-end gap-2">
+                {!person.isActive && <span className="mr-auto text-xs font-medium text-gray-500 dark:text-gray-400">Deactivated</span>}
+                <button onClick={() => handleViewEmployee(person.id)} className="rounded-lg px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/40">View details</button>
+              </div>
+            </article>
           ))}
         </div>
-      )}
-
-      {/* Add Employee Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">Add New Employee</h2>
-                <button
-                  onClick={() => setShowAddModal(false)}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  <XMarkIcon className="h-6 w-6" />
-                </button>
-              </div>
-              <form onSubmit={handleAddEmployee} className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      First Name
-                    </label>
-                    <input
-                      type="text"
-                      value={newEmployee.firstName}
-                      onChange={(e) => setNewEmployee({ ...newEmployee, firstName: e.target.value })}
-                      className="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
-                      value={newEmployee.lastName}
-                      onChange={(e) => setNewEmployee({ ...newEmployee, lastName: e.target.value })}
-                      className="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={newEmployee.email}
-                    onChange={(e) => setNewEmployee({ ...newEmployee, email: e.target.value })}
-                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    value={newEmployee.phone}
-                    onChange={(e) => setNewEmployee({ ...newEmployee, phone: e.target.value })}
-                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Departments
-                  </label>
-                  <div className="mt-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md p-2 max-h-40 overflow-y-auto">
-                    {departments.map((dept) => (
-                      <div key={`dept-checkbox-${dept.id}`} className="flex items-center py-1">
-                        <input
-                          type="checkbox"
-                          id={`dept-${dept.id}`}
-                          checked={newEmployee.departmentIds.includes(dept.id)}
-                          onChange={() => toggleDepartment(dept.id, newEmployee.departmentIds.includes(dept.id))}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor={`dept-${dept.id}`} className="ml-2 block text-sm text-gray-900 dark:text-white">
-                          {dept.name}
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Profile Picture
-                  </label>
-                  <div className="mt-1 flex items-center">
-                    <label className="flex items-center justify-center w-full h-32 px-4 transition bg-white border-2 border-gray-300 border-dashed rounded-md appearance-none cursor-pointer hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600">
-                      <div className="flex flex-col items-center space-y-2">
-                        {avatarFile ? (
-                          <div className="relative w-20 h-20">
-                            <img
-                              src={URL.createObjectURL(avatarFile)}
-                              alt="Preview"
-                              className="w-full h-full rounded-full object-cover"
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                setAvatarFile(null);
-                              }}
-                              className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1"
-                            >
-                              <XMarkIcon className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                          </svg>
-                        )}
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          {avatarFile ? 'Change image' : 'Click to upload or drag and drop'}
-                        </span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          JPG, JPEG, PNG (max. 2MB)
-                        </span>
-                      </div>
-                      <input
-                        type="file"
-                        className="hidden"
-                        accept="image/jpeg,image/jpg,image/png"
-                        onChange={handleFileChange}
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-3 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddModal(false)}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
-                    disabled={isSubmitting}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={isSubmitting}
-                  >
-                    {isSubmitting ? 'Adding...' : 'Add Employee'}
-                  </button>
-                </div>
-              </form>
-            </div>
+        <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-gray-500 dark:text-gray-400">Showing {((visiblePage - 1) * pageSize) + 1}–{Math.min(visiblePage * pageSize, filteredEmployees.length)} of {filteredEmployees.length.toLocaleString()} people</p>
+          <div className="flex items-center gap-2">
+            <button type="button" disabled={visiblePage <= 1} onClick={() => setCurrentPage(visiblePage - 1)} className="rounded-lg border border-gray-200 px-3 py-2 font-medium text-gray-700 disabled:opacity-40 dark:border-gray-700 dark:text-gray-200">Previous</button>
+            <span className="px-2 text-gray-600 dark:text-gray-300">Page {visiblePage} of {pageCount}</span>
+            <button type="button" disabled={visiblePage >= pageCount} onClick={() => setCurrentPage(visiblePage + 1)} className="rounded-lg border border-gray-200 px-3 py-2 font-medium text-gray-700 disabled:opacity-40 dark:border-gray-700 dark:text-gray-200">Next</button>
           </div>
         </div>
-      )}
+      </>}
 
       {/* View Employee Modal */}
       {showViewModal && selectedEmployee && (
@@ -531,7 +178,7 @@ const EmployeeDetails: React.FC = () => {
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Employee Details
+                  {selectedEmployee.role === 'ASSESSOR' ? 'Assessor details' : 'Employee details'}
                 </h3>
                 <button
                   onClick={() => setShowViewModal(false)}
@@ -611,176 +258,6 @@ const EmployeeDetails: React.FC = () => {
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Employee Modal */}
-      {showEditModal && selectedEmployee && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Edit Employee
-                </h3>
-                <button
-                  onClick={() => setShowEditModal(false)}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  <XMarkIcon className="h-5 w-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleUpdateEmployee} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      First Name
-                    </label>
-                    <input
-                      type="text"
-                      value={selectedEmployee.firstName}
-                      onChange={(e) => setSelectedEmployee({ ...selectedEmployee, firstName: e.target.value })}
-                      className="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
-                      value={selectedEmployee.lastName}
-                      onChange={(e) => setSelectedEmployee({ ...selectedEmployee, lastName: e.target.value })}
-                      className="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={selectedEmployee.email}
-                    disabled
-                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    value={selectedEmployee.phone || ''}
-                    onChange={(e) => setSelectedEmployee({ ...selectedEmployee, phone: e.target.value })}
-                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Departments
-                  </label>
-                  <div className="mt-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md p-2 max-h-40 overflow-y-auto">
-                    {departments.map((dept) => (
-                      <div key={`edit-dept-checkbox-${dept.id}`} className="flex items-center py-1">
-                        <input
-                          type="checkbox"
-                          id={`edit-dept-${dept.id}`}
-                          checked={selectedEmployee.departmentIds.includes(dept.id)}
-                          onChange={() => toggleDepartmentEdit(dept.id, selectedEmployee.departmentIds.includes(dept.id))}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor={`edit-dept-${dept.id}`} className="ml-2 block text-sm text-gray-900 dark:text-white">
-                          {dept.name}
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Profile Picture
-                  </label>
-                  <div className="mt-1 flex items-center">
-                    <label className="flex items-center justify-center w-full h-32 px-4 transition bg-white border-2 border-gray-300 border-dashed rounded-md appearance-none cursor-pointer hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600">
-                      <div className="flex flex-col items-center space-y-2">
-                        {avatarFile ? (
-                          <div className="relative w-20 h-20">
-                            <img
-                              src={URL.createObjectURL(avatarFile)}
-                              alt="Preview"
-                              className="w-full h-full rounded-full object-cover"
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                setAvatarFile(null);
-                              }}
-                              className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1"
-                            >
-                              <XMarkIcon className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ) : selectedEmployee.profilePictureUrl ? (
-                          <div className="relative w-20 h-20">
-                            <img
-                              src={selectedEmployee.profilePictureUrl}
-                              alt="Current"
-                              className="w-full h-full rounded-full object-cover"
-                            />
-                          </div>
-                        ) : (
-                          <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                          </svg>
-                        )}
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          {avatarFile ? 'Change image' : 'Click to upload or drag and drop'}
-                        </span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          JPG, JPEG, PNG (max. 2MB)
-                        </span>
-                      </div>
-                      <input
-                        type="file"
-                        className="hidden"
-                        accept="image/jpeg,image/jpg,image/png"
-                        onChange={handleFileChange}
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-3 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => setShowEditModal(false)}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
-                    disabled={isSubmitting}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={isSubmitting}
-                  >
-                    {isSubmitting ? 'Updating...' : 'Update Employee'}
-                  </button>
-                </div>
-              </form>
             </div>
           </div>
         </div>

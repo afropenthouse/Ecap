@@ -51,7 +51,7 @@ export default function EmployeeJobAssignment() {
           id: rec.id,
           employee_name: employeeName,
           job_role: jobTitle,
-          start_date: rec.startDate ?? '',
+          start_date: rec.startDate || rec.createdAt || '',
         };
       });
 

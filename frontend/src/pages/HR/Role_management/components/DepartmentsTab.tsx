@@ -46,16 +46,7 @@ export default function DepartmentsTab({ departments, loadingDepartments, fetchD
   // Create refs for dropdown menus
   const dropdownRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
-  // Mock data for initial state
-  const mockDepartments: Department[] = [
-    { id: '1', name: 'Engineering', description: 'Software development and engineering', created_at: new Date().toISOString() },
-    { id: '2', name: 'Marketing', description: 'Marketing and communications', created_at: new Date().toISOString() },
-    { id: '3', name: 'Human Resources', description: 'HR and talent management', created_at: new Date().toISOString() },
-    { id: '4', name: 'Finance', description: 'Financial operations and accounting', created_at: new Date().toISOString() },
-    { id: '5', name: 'Sales', description: 'Sales and business development', created_at: new Date().toISOString() }
-  ];
-
-  // Load departments via parent fetch when empty (no local mock)
+  // Load departments via parent fetch when empty.
   useEffect(() => {
     if (departments.length === 0) {
       // Trigger parent fetch to load real backend departments

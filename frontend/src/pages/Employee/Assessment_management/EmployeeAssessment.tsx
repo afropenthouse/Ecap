@@ -10,9 +10,11 @@ import {
   getMyJobAssignment,
   getDepartments,
   getJobs,
+  getProficiencyLevels,
   type Assessment,
   type Competency,
-  type AssessmentRating
+  type AssessmentRating,
+  type ProficiencyLevel
 } from "../../../api/services";
 
 // Types
@@ -37,6 +39,14 @@ const calculateProgress = (ratings: AssessmentRating[], totalCompetencies: numbe
   return Math.round((ratedCompetencies / totalCompetencies) * 100);
 };
 
+const defaultProficiencyLevels: ProficiencyLevel[] = [
+  { id: 'default-1', levelNumber: 1, label: 'Beginner' },
+  { id: 'default-2', levelNumber: 2, label: 'Developing' },
+  { id: 'default-3', levelNumber: 3, label: 'Proficient' },
+  { id: 'default-4', levelNumber: 4, label: 'Advanced' },
+  { id: 'default-5', levelNumber: 5, label: 'Expert' },
+];
+
 export default function EmployeeAssessment() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -47,6 +57,7 @@ export default function EmployeeAssessment() {
   const [currentAssessment, setCurrentAssessment] = useState<Assessment | null>(null);
   const [assessorAssessment, setAssessorAssessment] = useState<Assessment | null>(null);
   const [competencies, setCompetencies] = useState<Competency[]>([]);
+  const [proficiencyLevels, setProficiencyLevels] = useState<ProficiencyLevel[]>([]);
   const [jobAssignment, setJobAssignment] = useState<any>(null);
   const [departments, setDepartments] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
@@ -68,16 +79,23 @@ export default function EmployeeAssessment() {
         setLoading(true);
         
         // Load all necessary data in parallel
-        const [assessmentsData, competenciesData, jobAssignmentData, departmentsData, jobsData] = await Promise.all([
+        const [assessmentsData, competenciesData, jobAssignmentData, departmentsData, jobsData, levelsData] = await Promise.all([
           getAssessments(),
           getCompetencies(),
           getMyJobAssignment(),
           getDepartments(),
-          getJobs()
+          getJobs(),
+          getProficiencyLevels()
         ]);
 
         setAssessments(assessmentsData || []);
-        setCompetencies(competenciesData || []);
+        const requiredIds = new Set<string>((jobAssignmentData?.job?.requirements || []).map((requirement: { competencyId: string }) => requirement.competencyId));
+        const availableCompetencies = competenciesData || [];
+        setCompetencies(requiredIds.size > 0
+          ? availableCompetencies.filter(competency => requiredIds.has(competency.id))
+          : availableCompetencies);
+        const configuredLevels = [...(levelsData || [])].sort((a, b) => a.levelNumber - b.levelNumber);
+        setProficiencyLevels(configuredLevels.length > 0 ? configuredLevels : defaultProficiencyLevels);
         setJobAssignment(jobAssignmentData);
         setDepartments(departmentsData || []);
         setJobs(jobsData || []);
@@ -129,7 +147,8 @@ export default function EmployeeAssessment() {
       
       setCurrentAssessment(updatedAssessment);
       setActiveCompetencyIndex(0);
-      setShowRatingModal(true);
+      if (competencies.length > 0) setShowRatingModal(true);
+      else setShowSummaryModal(true);
 
     } catch (err) {
       console.error('Error starting assessment:', err);
@@ -167,9 +186,10 @@ export default function EmployeeAssessment() {
         setCurrentAssessment(updatedSelfAssessment);
       }
 
-      // Move to next competency or show summary
-      if (activeCompetencyIndex < competencies.length - 1) {
-        setActiveCompetencyIndex(activeCompetencyIndex + 1);
+      const ratedIds = new Set((updatedSelfAssessment?.ratings || []).map(existingRating => existingRating.competencyId));
+      const nextIndex = competencies.findIndex(item => !ratedIds.has(item.id));
+      if (nextIndex >= 0) {
+        setActiveCompetencyIndex(nextIndex);
       } else {
         setShowRatingModal(false);
         setShowSummaryModal(true);
@@ -484,12 +504,28 @@ export default function EmployeeAssessment() {
                 <div>
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-medium text-gray-900 dark:text-white">Competency Ratings</h3>
-                    {currentAssessment.status === 'IN_PROGRESS' && (
+                    {(currentAssessment.status === 'IN_PROGRESS' || currentAssessment.status === 'PENDING') && (
                       <button
-                        onClick={() => {
-                          setActiveCompetencyIndex(0);
-                          setShowRatingModal(true);
+                        onClick={async () => {
+                          if (currentAssessment.status === 'PENDING') {
+                            const started = await updateAssessmentStatus(currentAssessment.id, 'IN_PROGRESS');
+                            setCurrentAssessment(started);
+                          }
+                          if (competencies.length === 0) {
+                            setShowSummaryModal(true);
+                            return;
+                          }
+                          const ratedIds = new Set((currentAssessment.ratings || []).map(rating => rating.competencyId));
+                          const nextIndex = competencies.findIndex(competency => !ratedIds.has(competency.id));
+                          if (nextIndex < 0) setShowSummaryModal(true);
+                          else {
+                            setActiveCompetencyIndex(nextIndex);
+                            setCurrentRating(0);
+                            setCurrentComments('');
+                            setShowRatingModal(true);
+                          }
                         }}
+                        disabled={loading}
                         className="inline-flex items-center rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
                       >
                         Continue Assessment
@@ -505,7 +541,9 @@ export default function EmployeeAssessment() {
                   {(!currentAssessment.ratings || currentAssessment.ratings.length === 0) ? (
                     <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-6 text-center">
                       <p className="text-gray-500 dark:text-gray-400">
-                        No competencies have been rated yet. Click "Continue Assessment" to start rating your competencies.
+                        {competencies.length === 0
+                          ? 'No competencies are configured for this organisation yet. You can still submit this assessment.'
+                          : 'No competencies have been rated yet. Click "Continue Assessment" to start rating your competencies.'}
                       </p>
                     </div>
                   ) : (
@@ -519,7 +557,7 @@ export default function EmployeeAssessment() {
                               <div className="flex items-center">
                                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Rating:</span>
                                 <span className="bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 px-2 py-1 rounded text-sm font-medium">
-                                  {rating.rating}/5
+                                  {rating.rating}/{proficiencyLevels[proficiencyLevels.length - 1]?.levelNumber || '?'}
                                 </span>
                               </div>
                             </div>
@@ -547,7 +585,7 @@ export default function EmployeeAssessment() {
                       </svg>
                       <span>Assessment completed on {formatDate(currentAssessment.completedAt || currentAssessment.createdAt)}</span>
                     </div>
-                  ) : currentAssessment.ratings && currentAssessment.ratings.length > 0 && (
+                    ) : competencies.length > 0 && competencies.every(competency => currentAssessment.ratings?.some(rating => rating.competencyId === competency.id)) && (
                     <button
                       onClick={() => setShowSummaryModal(true)}
                       className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600"
@@ -601,26 +639,27 @@ export default function EmployeeAssessment() {
 
                       <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Your Rating (1-5)
+                          Your Rating
                         </label>
                         <div className="flex items-center gap-2">
-                          {[1, 2, 3, 4, 5].map((rating) => (
+                          {proficiencyLevels.map((level) => (
                             <button
-                              key={rating}
+                              key={level.id}
                               type="button"
-                              onClick={() => setCurrentRating(rating)}
+                              title={`${level.label}${level.description ? `: ${level.description}` : ''}`}
+                              onClick={() => setCurrentRating(level.levelNumber)}
                               className={`w-10 h-10 flex items-center justify-center rounded-full ${
-                                currentRating === rating
+                                currentRating === level.levelNumber
                                   ? 'bg-blue-600 text-white'
                                   : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                               } hover:bg-blue-500 hover:text-white transition-colors`}
                             >
-                              {rating}
+                              {level.levelNumber}
                             </button>
                           ))}
                         </div>
                         <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                          1 = Basic, 2 = Developing, 3 = Proficient, 4 = Advanced, 5 = Expert
+                          {proficiencyLevels.map(level => `${level.levelNumber} = ${level.label}`).join(' · ')}
                         </div>
                       </div>
 
@@ -668,7 +707,7 @@ export default function EmployeeAssessment() {
                       setCurrentRating(0);
                       setCurrentComments('');
                     }}
-                    disabled={loading}
+                  disabled={loading}
                     className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? (
@@ -717,10 +756,6 @@ export default function EmployeeAssessment() {
 
                 <div className="flex-1 overflow-y-auto p-6">
                   <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div className="col-span-2">
-                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Assessment ID</h3>
-                      <p className="mt-1 text-sm text-gray-900 dark:text-white">{currentAssessment.id}</p>
-                    </div>
                     <div>
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Start Date</h3>
                       <p className="mt-1 text-sm text-gray-900 dark:text-white">{formatDate(currentAssessment.createdAt)}</p>
@@ -771,7 +806,7 @@ export default function EmployeeAssessment() {
                               <div className="flex items-center">
                                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Rating:</span>
                                 <span className="bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 px-2 py-1 rounded text-sm font-medium">
-                                  {rating.rating}/5
+                                  {rating.rating}/{proficiencyLevels[proficiencyLevels.length - 1]?.levelNumber || '?'}
                                 </span>
                               </div>
                             </div>

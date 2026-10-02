@@ -185,7 +185,7 @@ export default function JobCompetencyProfile() {
       setFormData({ jobId: "", competencyId: "", requiredLevel: 0 });
     } catch (err: any) {
       console.error('Error saving profile:', err);
-      setError(err.response?.data?.error || 'Failed to save profile. Please try again later.');
+      setError(err instanceof Error ? err.message : 'Failed to save profile. Please try again later.');
     } finally {
       setIsAdding(false);
       setIsUpdating(false);
@@ -214,7 +214,7 @@ export default function JobCompetencyProfile() {
       setSelectedProfile(null);
     } catch (err: any) {
       console.error('Error deleting profile:', err);
-      setError(err.response?.data?.error || 'Failed to delete profile. Please try again later.');
+      setError(err instanceof Error ? err.message : 'Failed to delete profile. Please try again later.');
     } finally {
       setIsDeleting(false);
     }

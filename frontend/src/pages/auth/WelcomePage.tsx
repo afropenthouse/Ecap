@@ -58,9 +58,9 @@ export default function WelcomePage() {
       // Determine redirect path based on highest role
       let redirectPath = '/page-description';
       if (roles.includes('hr')) {
-        redirectPath = '/hr/page-description';
+        redirectPath = '/page-description';
       } else if (roles.includes('assessor')) {
-        redirectPath = '/assessor/page-description';
+        redirectPath = '/page-description';
       }
 
       // Store for button

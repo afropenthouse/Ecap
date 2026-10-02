@@ -10,7 +10,10 @@ const router = Router();
 router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
-      where: { organizationId: req.user!.organizationId, role: 'EMPLOYEE' },
+      where: {
+        organizationId: req.user!.organizationId,
+        role: req.user!.role === 'HR' ? { in: ['EMPLOYEE', 'ASSESSOR'] } : 'EMPLOYEE',
+      },
       include: {
         jobAssignments: {
           include: {
@@ -45,6 +48,8 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
         phone: u.phone || null,
         profilePictureUrl: u.profilePictureUrl || null,
         isLockedUntil: u.isLockedUntil || null,
+        role: u.role,
+        isActive: u.isActive,
         departmentIds: departments.map((d) => d.id),
         departments: departments.map((d) => ({ id: d.id, name: d.name })),
       };
@@ -116,7 +121,7 @@ router.post('/', authMiddleware, rbac(['HR']), async (req: Request, res: Respons
       const verifyLink = `${frontendUrl}/auth/email-confirmation?token=${rawToken}`;
       const verifyTpl = buildVerifyEmail(org?.name || 'HRM Office', verifyLink);
       // Fire-and-forget the verification email so an SMTP outage doesn't delay the response
-      void sendMail(user.email, verifyTpl.subject, verifyTpl.html).catch((mailErr) => {
+      void sendMail(user.email, verifyTpl.subject, verifyTpl.html, verifyTpl.text).catch((mailErr) => {
         console.error('[mailer] failed to send verification email (employee create):', mailErr);
       });
     } catch (mailErr) {
@@ -153,15 +158,10 @@ router.put('/:id/departments', authMiddleware, async (req: Request, res: Respons
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    // If employee is updating own departments, enforce lock and self-only access
+    // Employees may update their own department selections at any time.
     if (req.user!.role === 'EMPLOYEE') {
       if (req.user!.id !== id) {
         return res.status(403).json({ error: 'Forbidden' });
-      }
-      const now = new Date();
-      // Lock applies only after onboarding is completed
-      if (user.onboardingCompleted && user.isLockedUntil && user.isLockedUntil > now) {
-        return res.status(423).json({ error: 'Profile locked. Try later.' });
       }
     }
 
@@ -218,17 +218,12 @@ router.put('/:id/departments', authMiddleware, async (req: Request, res: Respons
     const uniqueMap = new Map<string, { id: string; organizationId: string; name: string; createdAt: Date; updatedAt: Date }>();
     deps.forEach((d) => uniqueMap.set(d.id, d));
 
-    // If employee did the update, set onboarding completion or the 12-hour lock window
+    // If the employee did the update, mark onboarding complete when applicable.
     let updatedLock: Date | null = user.isLockedUntil ?? null;
     let onboardingCompleted = !!user.onboardingCompleted;
     if (req.user!.role === 'EMPLOYEE') {
       if (user.onboardingCompleted) {
-        const updatedUser = await prisma.user.update({
-          where: { id },
-          data: { isLockedUntil: new Date(Date.now() + 12 * 60 * 60 * 1000) },
-        });
-        updatedLock = updatedUser.isLockedUntil ?? null;
-        onboardingCompleted = !!updatedUser.onboardingCompleted;
+        updatedLock = user.isLockedUntil ?? null;
       } else {
         const updatedUser = await prisma.user.update({
           where: { id },

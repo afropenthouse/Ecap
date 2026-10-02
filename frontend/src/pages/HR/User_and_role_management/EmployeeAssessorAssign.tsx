@@ -14,41 +14,25 @@ import {
   deleteAssessorAssignment,
   listUsers,
   getJobs,
-  getDepartments,
   listEmployeeJobAssignments,
   type UserSummary,
   type Job,
-  type Department,
   type EmployeeJobAssignment,
 } from "../../../api/services";
 
-interface AssessorAssignmentRecord {
-  id: string;
-  assessorId: string;
-  employeeId: string;
-}
-
 interface AssignmentRow {
   id: string;
+  employeeId: string;
+  assessorId: string;
   employeeName: string;
-  department: string;
   jobTitle: string;
   assessor: string;
   created_at?: string;
 }
 
-interface JobRole {
-  id: number;
-  name: string;
-  description: string;
-  created_at: string;
-}
-
-
 export default function EmployeeAssessorAssign() {
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [jobAssignments, setJobAssignments] = useState<EmployeeJobAssignment[]>([]);
   const [assessors, setAssessors] = useState<UserSummary[]>([]);
@@ -64,7 +48,6 @@ export default function EmployeeAssessorAssign() {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<string>("");
   const [selectedAssessor, setSelectedAssessor] = useState<string>("");
-  const [formDepartment, setFormDepartment] = useState<string>("");
   const [formJobRole, setFormJobRole] = useState<string>("");
 
 
@@ -74,17 +57,15 @@ export default function EmployeeAssessorAssign() {
       setLoading(true);
       setError(null);
 
-      const [usersRes, jobsRes, deptsRes, jobAssignRes, assignRes] = await Promise.all([
+      const [usersRes, jobsRes, jobAssignRes, assignRes] = await Promise.all([
         listUsers(),
         getJobs(),
-        getDepartments(),
         listEmployeeJobAssignments(),
         listAssessorAssignments(),
       ]);
 
       setUsers(usersRes);
       setJobs(jobsRes);
-      setDepartments(deptsRes);
       setJobAssignments(jobAssignRes);
 
       const employeesList = usersRes.filter(u => u.role === 'EMPLOYEE');
@@ -95,18 +76,20 @@ export default function EmployeeAssessorAssign() {
       const rows: AssignmentRow[] = assignRes.map((rec) => {
         const emp = usersRes.find(u => u.id === rec.employeeId);
         const ass = usersRes.find(u => u.id === rec.assessorId);
-        const jaForEmp = jobAssignRes
+        const employeeJobAssignments = jobAssignRes
           .filter(ja => ja.employeeId === rec.employeeId)
           .sort((a, b) => {
             const ta = a.startDate ? new Date(a.startDate).getTime() : 0;
             const tb = b.startDate ? new Date(b.startDate).getTime() : 0;
             return tb - ta;
-          })[0];
+          });
+        const jaForEmp = employeeJobAssignments[0];
         const job = jobsRes.find(j => j.id === jaForEmp?.jobId);
         return {
           id: rec.id,
+          employeeId: rec.employeeId,
+          assessorId: rec.assessorId,
           employeeName: `${emp?.firstName ?? ''} ${emp?.lastName ?? ''}`.trim(),
-          department: job?.department?.name ?? '',
           jobTitle: job?.title ?? '',
           assessor: `${ass?.firstName ?? ''} ${ass?.lastName ?? ''}`.trim(),
         };
@@ -139,22 +122,21 @@ export default function EmployeeAssessorAssign() {
     };
   }, []);
 
-  // Derive department and job role when employee selection changes
+  // Derive the job role when employee selection changes
   useEffect(() => {
     if (!selectedEmployee) {
-      setFormDepartment("");
       setFormJobRole("");
       return;
     }
-    const jaForEmp = jobAssignments
+    const employeeJobAssignments = jobAssignments
       .filter(ja => ja.employeeId === selectedEmployee)
       .sort((a, b) => {
         const ta = a.startDate ? new Date(a.startDate).getTime() : 0;
         const tb = b.startDate ? new Date(b.startDate).getTime() : 0;
         return tb - ta;
-      })[0];
+      });
+    const jaForEmp = employeeJobAssignments[0];
     const job = jobs.find(j => j.id === jaForEmp?.jobId);
-    setFormDepartment(job?.department?.name ?? "");
     setFormJobRole(job?.title ?? "");
   }, [selectedEmployee, jobAssignments, jobs]);
 
@@ -166,18 +148,20 @@ export default function EmployeeAssessorAssign() {
       const rows: AssignmentRow[] = assignRes.map((rec) => {
         const emp = users.find(u => u.id === rec.employeeId);
         const ass = users.find(u => u.id === rec.assessorId);
-        const jaForEmp = jobAssignments
+        const employeeJobAssignments = jobAssignments
           .filter(ja => ja.employeeId === rec.employeeId)
           .sort((a, b) => {
             const ta = a.startDate ? new Date(a.startDate).getTime() : 0;
             const tb = b.startDate ? new Date(b.startDate).getTime() : 0;
             return tb - ta;
-          })[0];
+          });
+        const jaForEmp = employeeJobAssignments[0];
         const job = jobs.find(j => j.id === jaForEmp?.jobId);
         return {
           id: rec.id,
+        employeeId: rec.employeeId,
+        assessorId: rec.assessorId,
           employeeName: `${emp?.firstName ?? ''} ${emp?.lastName ?? ''}`.trim(),
-          department: job?.department?.name ?? '',
           jobTitle: job?.title ?? '',
           assessor: `${ass?.firstName ?? ''} ${ass?.lastName ?? ''}`.trim(),
         };
@@ -194,7 +178,6 @@ export default function EmployeeAssessorAssign() {
   // Filter assignments based on search term
   const filteredAssignments = assignments.filter(assignment =>
     assignment.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    assignment.department.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (assignment.jobTitle ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     assignment.assessor.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -216,18 +199,20 @@ export default function EmployeeAssessorAssign() {
 
       const emp = users.find(u => u.id === created.employeeId);
       const ass = users.find(u => u.id === created.assessorId);
-      const jaForEmp = jobAssignments
+      const employeeJobAssignments = jobAssignments
         .filter(ja => ja.employeeId === created.employeeId)
         .sort((a, b) => {
           const ta = a.startDate ? new Date(a.startDate).getTime() : 0;
           const tb = b.startDate ? new Date(b.startDate).getTime() : 0;
           return tb - ta;
-        })[0];
+        });
+      const jaForEmp = employeeJobAssignments[0];
       const job = jobs.find(j => j.id === jaForEmp?.jobId);
       const newRow: AssignmentRow = {
         id: created.id,
+        employeeId: created.employeeId,
+        assessorId: created.assessorId,
         employeeName: `${emp?.firstName ?? ''} ${emp?.lastName ?? ''}`.trim(),
-        department: job?.department?.name ?? '',
         jobTitle: job?.title ?? '',
         assessor: `${ass?.firstName ?? ''} ${ass?.lastName ?? ''}`.trim(),
       };
@@ -236,7 +221,6 @@ export default function EmployeeAssessorAssign() {
       setShowAddModal(false);
       setSelectedEmployee("");
       setSelectedAssessor("");
-      setFormDepartment("");
       setFormJobRole("");
     } catch (err) {
       console.error("Error adding assignment:", err);
@@ -249,23 +233,10 @@ export default function EmployeeAssessorAssign() {
   const handleEdit = (assignment: AssignmentRow) => {
     setSelectedAssignment(assignment);
 
-    // Find matching users by name
-    const employee = users.find(u => `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() === assignment.employeeName);
-    const assessor = users.find(u => `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() === assignment.assessor);
+    setSelectedEmployee(assignment.employeeId);
+    setSelectedAssessor(assignment.assessorId);
 
-    if (employee) {
-      setSelectedEmployee(employee.id);
-    } else {
-      setSelectedEmployee("");
-    }
-
-    if (assessor) {
-      setSelectedAssessor(assessor.id);
-    } else {
-      setSelectedAssessor("");
-    }
-
-    // Department and job are derived via selectedEmployee effect
+    // The job role is derived via the selected employee effect.
     setShowEditModal(true);
     setActiveDropdown(null);
   };
@@ -288,22 +259,24 @@ export default function EmployeeAssessorAssign() {
       const updated = await updateAssessorAssignment(selectedAssignment.id, {
         employeeId: selectedEmployee,
         assessorId: selectedAssessor,
-      } as any);
+      });
 
       const emp = users.find(u => u.id === updated.employeeId);
       const ass = users.find(u => u.id === updated.assessorId);
-      const jaForEmp = jobAssignments
+      const employeeJobAssignments = jobAssignments
         .filter(ja => ja.employeeId === updated.employeeId)
         .sort((a, b) => {
           const ta = a.startDate ? new Date(a.startDate).getTime() : 0;
           const tb = b.startDate ? new Date(b.startDate).getTime() : 0;
           return tb - ta;
-        })[0];
+        });
+      const jaForEmp = employeeJobAssignments[0];
       const job = jobs.find(j => j.id === jaForEmp?.jobId);
       const updatedRow: AssignmentRow = {
         id: updated.id,
+        employeeId: updated.employeeId,
+        assessorId: updated.assessorId,
         employeeName: `${emp?.firstName ?? ''} ${emp?.lastName ?? ''}`.trim(),
-        department: job?.department?.name ?? '',
         jobTitle: job?.title ?? '',
         assessor: `${ass?.firstName ?? ''} ${ass?.lastName ?? ''}`.trim(),
       };
@@ -377,7 +350,7 @@ export default function EmployeeAssessorAssign() {
         <input
           type="text"
           className="block w-full rounded-lg border border-gray-200 bg-white py-2 pl-10 pr-3 text-sm placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-800 dark:bg-white/[0.03] dark:text-white dark:placeholder-gray-400"
-          placeholder="Search by employee, department, job role, or assessor..."
+          placeholder="Search by employee, job role, or assessor..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
@@ -418,9 +391,6 @@ export default function EmployeeAssessorAssign() {
                     Employee Details
                   </th>
                   <th scope="col" className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Department
-                  </th>
-                  <th scope="col" className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
                     Job Role
                   </th>
                   <th scope="col" className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -438,9 +408,6 @@ export default function EmployeeAssessorAssign() {
                   >
                     <td className="px-3 py-2">
                       <div className="font-medium text-sm text-gray-900 dark:text-white">{assignment.employeeName}</div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="text-sm text-gray-900 dark:text-white">{assignment.department}</div>
                     </td>
                     <td className="px-3 py-2">
                       <div className="text-sm text-gray-900 dark:text-white">{assignment.jobTitle}</div>
@@ -539,20 +506,6 @@ export default function EmployeeAssessorAssign() {
               </div>
 
               <div>
-                <label htmlFor="department_display" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Department
-                </label>
-                <input
-                  id="department_display"
-                  type="text"
-                  value={formDepartment || ''}
-                  readOnly
-                  className="mt-1 block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Derived from latest job assignment</p>
-              </div>
-
-              <div>
                 <label htmlFor="job_role_display" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Job Role
                 </label>
@@ -648,20 +601,6 @@ export default function EmployeeAssessorAssign() {
                     </option>
                   ))}
                 </select>
-              </div>
-
-              <div>
-                <label htmlFor="edit_department_display" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Department
-                </label>
-                <input
-                  id="edit_department_display"
-                  type="text"
-                  value={formDepartment || ''}
-                  readOnly
-                  className="mt-1 block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Derived from latest job assignment</p>
               </div>
 
               <div>

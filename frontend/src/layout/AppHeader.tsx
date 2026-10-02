@@ -3,35 +3,14 @@ import { useState, useEffect, useRef } from "react";
 import { HorizontaLDots, CloseLineIcon } from "../icons";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import { useAuth } from "../context/AuthContext";
-import { getMyOrganization, Organization } from "../api/services";
 
 export default function AppHeader() {
   const [isOpen, setIsOpen] = useState(false);
-  const { user, signOut } = useAuth();
+  const { user, organization: org, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const [org, setOrg] = useState<Organization | null>(null);
-
-  // Fetch organization when authenticated
-  useEffect(() => {
-    const loadOrg = async () => {
-      if (!user) {
-        setOrg(null);
-        return;
-      }
-      try {
-        const o = await getMyOrganization();
-        setOrg(o);
-      } catch (e) {
-        console.warn("Failed to load organization for header");
-        setOrg(null);
-      }
-    };
-    loadOrg();
-  }, [user]);
-
   // Close the mobile menu when clicking outside of it
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -85,7 +64,7 @@ export default function AppHeader() {
               {user ? (
                 <span className="flex items-center text-xl font-bold text-gray-900 dark:text-white cursor-default">
                   {org?.logoUrl ? (
-                    <img src={org.logoUrl} alt={org.name + ' logo'} className="h-8 w-8 rounded mr-2 object-contain" />
+                    <img src={org.logoUrl} alt={org.name + ' logo'} className="mr-3 size-10 rounded-xl bg-white p-1.5 object-contain" />
                   ) : null}
                   {org?.name ? org.name : 'HRM Office'}
                 </span>

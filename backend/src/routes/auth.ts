@@ -1,12 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../config/prisma';
-import { hashPassword, verifyPassword } from '../utils/password';
+import { hashPassword, verifyPassword, isStrongPassword } from '../utils/password';
 import { signToken } from '../utils/jwt';
 import { authMiddleware } from '../middleware/auth';
-import { sendMail, buildWelcomeEmail, buildResetEmail, buildVerifyEmail } from '../utils/email';
-import { generateToken, hashToken } from '../utils/tokens';
+import { sendMail, buildWelcomeEmail, buildResetEmail, buildVerifyCodeEmail } from '../utils/email';
+import { generateToken, generateVerificationCode, hashToken } from '../utils/tokens';
 
 const router = Router();
+const emailCodeAttempts = new Map<string, { count: number; resetAt: number }>();
+const emailCodeResends = new Map<string, { count: number; resetAt: number; sentAt: number }>();
 
 // Lightweight connectivity ping for diagnostics
 router.get('/ping', async (_req: Request, res: Response) => {
@@ -16,44 +18,46 @@ router.get('/ping', async (_req: Request, res: Response) => {
 // Organization signup + create HR admin user
 router.post('/org/signup', async (req: Request, res: Response) => {
   try {
-    const { organizationName, organizationEmail, slug, adminEmail, adminPassword, logoUrl, address } = req.body as {
+    const { organizationName, organizationEmail, adminEmail, adminPassword, logoUrl, address, firstName, lastName } = req.body as {
       organizationName: string;
       organizationEmail: string;
-      slug: string;
       adminEmail: string;
       adminPassword: string;
+      firstName?: string;
+      lastName?: string;
       logoUrl?: string;
       address?: string;
     };
 
-    if (!organizationName || !organizationEmail || !slug || !adminEmail || !adminPassword) {
+    if (!organizationName || !organizationEmail || !adminEmail || !adminPassword) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-
-    const exists = await prisma.organization.findUnique({ where: { slug } });
-    if (exists) return res.status(409).json({ error: 'Organization slug already exists' });
-
-    const org = await prisma.organization.create({
-      data: { name: organizationName, email: organizationEmail, slug, logoUrl, address },
-    });
+    if (!isStrongPassword(adminPassword)) {
+      return res.status(400).json({ error: 'Password must have at least 8 characters, upper and lowercase letters, a number, and a symbol.' });
+    }
 
     const passwordHash = await hashPassword(adminPassword);
-    const admin = await prisma.user.create({
-      data: {
-        organizationId: org.id,
-        email: adminEmail,
-        passwordHash,
-        // Use organization name as the admin's display name
-        firstName: organizationName,
-        lastName: '',
-        role: 'HR',
-      },
+    const { org, admin } = await prisma.$transaction(async (tx) => {
+      const org = await tx.organization.create({
+        data: { name: organizationName.trim(), email: organizationEmail.trim().toLowerCase(), logoUrl, address },
+      });
+      const admin = await tx.user.create({
+        data: {
+          organizationId: org.id,
+          email: adminEmail.trim().toLowerCase(),
+          passwordHash,
+          firstName: firstName?.trim() || organizationName.trim(),
+          lastName: lastName?.trim() || '',
+          role: 'HR',
+        },
+      });
+      return { org, admin };
     });
 
-    // Create and send email verification link for admin
-    const rawToken = generateToken(32);
-    const tokenHash = hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    // Send an expiring, one-time verification code to the HR administrator.
+    const verificationCode = generateVerificationCode();
+    const tokenHash = hashToken(`${admin.email}:${verificationCode}`);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     await prisma.emailVerificationToken.create({
       data: {
         organizationId: org.id,
@@ -63,25 +67,24 @@ router.post('/org/signup', async (req: Request, res: Response) => {
       },
     });
 
-    const frontendUrl = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://ecap-project.vercel.app' : 'http://localhost:5173');
-    const verifyLink = `${frontendUrl}/auth/email-confirmation?token=${rawToken}`;
-    const verifyTpl = buildVerifyEmail(org.name, verifyLink);
+    const verifyTpl = buildVerifyCodeEmail(org.name, verificationCode);
     // Send email verification asynchronously to avoid blocking the signup response
-    void sendMail(adminEmail, verifyTpl.subject, verifyTpl.html).catch((e) => {
+    void sendMail(admin.email, verifyTpl.subject, verifyTpl.html, verifyTpl.text).catch((e) => {
       console.error('[mailer] failed to send verification email:', e);
     });
 
     // Send welcome email to admin
     const welcome = buildWelcomeEmail(org.name);
     // Send welcome email asynchronously
-    void sendMail(adminEmail, welcome.subject, welcome.html).catch((e) => {
+    void sendMail(admin.email, welcome.subject, welcome.html, welcome.text).catch((e) => {
       console.error('[mailer] failed to send welcome email:', e);
     });
 
     return res.status(201).json({
       user: { id: admin.id, email: admin.email, role: admin.role, organizationId: org.id },
-      organization: { id: org.id, name: org.name, slug: org.slug, logoUrl: org.logoUrl },
+      organization: { id: org.id, name: org.name, logoUrl: org.logoUrl },
       emailVerificationRequired: true,
+      verificationCodeExpiresInMinutes: 15,
     });
   } catch (e) {
     console.error(e);
@@ -90,120 +93,37 @@ router.post('/org/signup', async (req: Request, res: Response) => {
 });
 
 // HR creates users (employee or assessor)
-router.post('/signup', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const { email, password, firstName, lastName, role } = req.body as {
-      email: string;
-      password: string;
-      firstName: string;
-      lastName: string;
-      role: 'EMPLOYEE' | 'ASSESSOR' | 'HR';
-    };
-
-    if (!req.user || req.user.role !== 'HR') return res.status(403).json({ error: 'Only HR can create users' });
-    if (!email || !password || !firstName || !lastName || !role) return res.status(400).json({ error: 'Missing required fields' });
-
-    const passwordHash = await hashPassword(password);
-    const user = await prisma.user.create({
-      data: {
-        organizationId: req.user!.organizationId,
-        email,
-        passwordHash,
-        firstName,
-        lastName,
-        role,
-      },
-    });
-
-    // Send verification to newly created non-HR users too
-    const rawToken = generateToken(32);
-    const tokenHash = hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await prisma.emailVerificationToken.create({
-      data: { organizationId: req.user!.organizationId, userId: user.id, tokenHash, expiresAt },
-    });
-    const org = await prisma.organization.findUnique({ where: { id: req.user!.organizationId } });
-    const frontendUrl = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://ecap-project.vercel.app' : 'http://localhost:5173');
-    const verifyLink = `${frontendUrl}/auth/email-confirmation?token=${rawToken}`;
-    const verifyTpl = buildVerifyEmail(org?.name || 'HRM Office', verifyLink);
-    // Send verification email asynchronously (fire-and-forget) to avoid blocking the request
-    void sendMail(user.email, verifyTpl.subject, verifyTpl.html).catch((e) => {
-      console.error('[mailer] failed to send verification email (HR create user):', e);
-    });
-
-    res.status(201).json({ id: user.id, email: user.email, role: user.role });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: 'Failed to create user' });
-  }
+router.post('/signup', authMiddleware, async (_req: Request, res: Response) => {
+  return res.status(410).json({ error: 'Use the HR team invitation flow to create organization users.' });
 });
 
 // Individual self-signup (public)
 router.post('/individual/signup', async (req: Request, res: Response) => {
-  try {
-    const { email, password, slug, firstName, lastName } = req.body as {
-      email: string;
-      password: string;
-      slug: string;
-      firstName?: string;
-      lastName?: string;
-    };
-    if (!email || !password || !slug) return res.status(400).json({ error: 'Missing required fields' });
-
-    const org = await prisma.organization.findUnique({ where: { slug } });
-    if (!org) return res.status(404).json({ error: 'Organization not found' });
-
-    const exists = await prisma.user.findFirst({ where: { organizationId: org.id, email } });
-    if (exists) return res.status(409).json({ error: 'An account with this email already exists in the organization' });
-
-    const passwordHash = await hashPassword(password);
-    const user = await prisma.user.create({
-      data: {
-        organizationId: org.id,
-        email,
-        passwordHash,
-        firstName: firstName || '',
-        lastName: lastName || '',
-        role: 'EMPLOYEE',
-      },
-    });
-
-    const rawToken = generateToken(32);
-    const tokenHash = hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await prisma.emailVerificationToken.create({
-      data: { organizationId: org.id, userId: user.id, tokenHash, expiresAt },
-    });
-
-    const frontendUrl = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://ecap-project.vercel.app' : 'http://localhost:5173');
-    const verifyLink = `${frontendUrl}/auth/email-confirmation?token=${rawToken}`;
-    const verifyTpl = buildVerifyEmail(org.name, verifyLink);
-    // Fire-and-forget email verification to prevent request delays
-    void sendMail(user.email, verifyTpl.subject, verifyTpl.html).catch((e) => {
-      console.error('[mailer] failed to send verification email (individual):', e);
-    });
-
-    return res.status(201).json({ id: user.id, email: user.email, role: user.role, emailVerificationRequired: true });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: 'Failed to sign up' });
-  }
+  return res.status(410).json({ error: 'Public team signup is closed. Ask your HR administrator for an invitation.' });
 });
 
 // Login
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { email, password, slug } = req.body as { email: string; password: string; slug: string };
-    if (!email || !password || !slug) return res.status(400).json({ error: 'Missing required fields' });
+    const { email: inputEmail, password, organizationId } = req.body as { email: string; password: string; organizationId?: string };
+    const email = inputEmail?.trim().toLowerCase();
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
-    const org = await prisma.organization.findUnique({ where: { slug } });
-    if (!org) return res.status(404).json({ error: 'Organization not found' });
+    const candidates = await prisma.user.findMany({
+      where: { email, ...(organizationId ? { organizationId } : {}) },
+      include: { organization: true },
+    });
+    const matches = [];
+    for (const candidate of candidates) if (await verifyPassword(password, candidate.passwordHash)) matches.push(candidate);
+    if (matches.length !== 1) return res.status(401).json({ error: 'Invalid credentials' });
+    const user = matches[0];
+    const org = user.organization;
+    if (!user.isActive) return res.status(403).json({ error: 'Your account is deactivated. Contact your HR administrator.' });
 
-    const user = await prisma.user.findFirst({ where: { organizationId: org.id, email } });
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-
-    const ok = await verifyPassword(password, user.passwordHash);
-    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+    const pendingInvitation = await prisma.userInvitation.findFirst({
+      where: { userId: user.id, acceptedAt: null, expiresAt: { gt: new Date() } },
+    });
+    if (pendingInvitation) return res.status(403).json({ error: 'PASSWORD_CHANGE_REQUIRED' });
 
     // Enforce email verification before login
     if (!user.emailVerifiedAt) {
@@ -211,7 +131,7 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     const token = signToken({ id: user.id, organizationId: org.id, role: user.role });
-    return res.json({ token, user: { id: user.id, email: user.email, role: user.role, organizationId: org.id }, organization: { id: org.id, name: org.name, slug: org.slug, logoUrl: org.logoUrl } });
+    return res.json({ token, user: { id: user.id, email: user.email, role: user.role, organizationId: org.id, firstName: user.firstName, lastName: user.lastName }, organization: { id: org.id, name: org.name, logoUrl: org.logoUrl } });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'Login failed' });
@@ -233,23 +153,19 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
 
 router.post('/forgot-password', async (req: Request, res: Response) => {
   try {
-    const { email, slug } = req.body as { email: string; slug: string };
-    if (!email || !slug) return res.status(400).json({ error: 'Missing required fields' });
-
-    const org = await prisma.organization.findUnique({ where: { slug } });
-    if (!org) return res.status(200).json({ success: true }); // avoid enumeration
-
-    const user = await prisma.user.findFirst({ where: { organizationId: org.id, email } });
+    const { email } = req.body as { email: string };
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const users = await prisma.user.findMany({ where: { email: email.trim().toLowerCase() }, include: { organization: true } });
 
     // Always respond success; only proceed if user exists
-    if (user) {
+    for (const user of users) {
       const rawToken = generateToken(32);
       const tokenHash = hashToken(rawToken);
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
       await prisma.passwordResetToken.create({
         data: {
-          organizationId: org.id,
+          organizationId: user.organizationId,
           userId: user.id,
           tokenHash,
           expiresAt,
@@ -258,9 +174,9 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
 
       const frontendUrl = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://ecap-project.vercel.app' : 'http://localhost:5173');
       const link = `${frontendUrl}/auth/reset-password?token=${rawToken}`;
-      const emailTpl = buildResetEmail(org.name, link);
+      const emailTpl = buildResetEmail(user.organization.name, link);
     // Asynchronous reset email send
-    void sendMail(user.email, emailTpl.subject, emailTpl.html).catch((e) => {
+    void sendMail(user.email, emailTpl.subject, emailTpl.html, emailTpl.text).catch((e) => {
       console.error('[mailer] failed to send password reset email:', e);
     });
     }
@@ -299,33 +215,25 @@ router.post('/reset-password', async (req: Request, res: Response) => {
 // Resend email verification
 router.post('/verify-email/resend', async (req: Request, res: Response) => {
   try {
-    const { email, slug } = req.body as { email: string; slug: string };
-    if (!email || !slug) return res.status(400).json({ error: 'Missing required fields' });
-
-    const org = await prisma.organization.findUnique({ where: { slug } });
-    if (!org) return res.status(200).json({ success: true }); // mask
-
-    const user = await prisma.user.findFirst({ where: { organizationId: org.id, email } });
-    if (!user) return res.status(200).json({ success: true }); // mask
-
-    // If already verified, simply return success
-    if (user.emailVerifiedAt) return res.status(200).json({ success: true });
-
-    const rawToken = generateToken(32);
-    const tokenHash = hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    await prisma.emailVerificationToken.create({
-      data: { organizationId: org.id, userId: user.id, tokenHash, expiresAt },
-    });
-
-    const frontendUrl = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://ecap-project.vercel.app' : 'http://localhost:5173');
-    const verifyLink = `${frontendUrl}/auth/email-confirmation?token=${rawToken}`;
-    const verifyTpl = buildVerifyEmail(org.name, verifyLink);
-    // Asynchronous resend to avoid blocking
-    void sendMail(user.email, verifyTpl.subject, verifyTpl.html).catch((e) => {
-      console.error('[mailer] failed to resend verification email:', e);
-    });
+    const { email } = req.body as { email: string };
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const normalizedEmail = email.trim().toLowerCase();
+    const resendWindow = emailCodeResends.get(normalizedEmail);
+    const resendNow = Date.now();
+    if (resendWindow && resendWindow.resetAt > resendNow && (resendWindow.count >= 3 || resendNow - resendWindow.sentAt < 60_000)) {
+      return res.status(429).json({ error: 'Please wait before requesting another verification code.' });
+    }
+    emailCodeResends.set(normalizedEmail, resendWindow && resendWindow.resetAt > resendNow
+      ? { count: resendWindow.count + 1, resetAt: resendWindow.resetAt, sentAt: resendNow }
+      : { count: 1, resetAt: resendNow + 60 * 60 * 1000, sentAt: resendNow });
+    const users = await prisma.user.findMany({ where: { email: normalizedEmail, emailVerifiedAt: null }, include: { organization: true } });
+    for (const user of users) {
+      const code = generateVerificationCode();
+      await prisma.emailVerificationToken.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } });
+      await prisma.emailVerificationToken.create({ data: { organizationId: user.organizationId, userId: user.id, tokenHash: hashToken(`${user.email}:${code}`), expiresAt: new Date(Date.now() + 15 * 60 * 1000) } });
+      const verifyTpl = buildVerifyCodeEmail(user.organization.name, code);
+      void sendMail(user.email, verifyTpl.subject, verifyTpl.html, verifyTpl.text).catch((e) => console.error('[mailer] failed to resend verification code:', e));
+    }
 
     return res.json({ success: true });
   } catch (e) {
@@ -348,13 +256,91 @@ router.post('/verify-email', async (req: Request, res: Response) => {
 
     if (!rec) return res.status(400).json({ error: 'Invalid or expired token' });
 
-    await prisma.user.update({ where: { id: rec.userId }, data: { emailVerifiedAt: new Date() } });
+    const user = await prisma.user.findUnique({ where: { id: rec.userId }, select: { role: true } });
+    await prisma.user.update({ where: { id: rec.userId }, data: { emailVerifiedAt: new Date(), onboardingCompleted: user?.role === 'HR' ? true : undefined } });
     await prisma.emailVerificationToken.update({ where: { id: rec.id }, data: { usedAt: new Date() } });
 
     return res.json({ success: true });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'Failed to verify email' });
+  }
+});
+
+// Invitees prove possession of their emailed temporary password and replace it on first sign in.
+router.post('/first-login', async (req: Request, res: Response) => {
+  try {
+    const { email: inputEmail, temporaryPassword, newPassword, organizationId } = req.body as { email?: string; temporaryPassword?: string; newPassword?: string; organizationId?: string };
+    const email = inputEmail?.trim().toLowerCase();
+    if (!email || !temporaryPassword || !newPassword) return res.status(400).json({ error: 'Email, temporary password, and new password are required' });
+    if (!isStrongPassword(newPassword)) return res.status(400).json({ error: 'Password must have at least 8 characters, upper and lowercase letters, a number, and a symbol.' });
+    const users = await prisma.user.findMany({ where: { email, ...(organizationId ? { organizationId } : {}) } });
+    const matches = [];
+    for (const candidate of users) if (await verifyPassword(temporaryPassword, candidate.passwordHash)) matches.push(candidate);
+    if (matches.length !== 1) return res.status(401).json({ error: 'Temporary password is invalid or the invitation has expired' });
+    const user = matches[0];
+    if (!user.isActive) return res.status(403).json({ error: 'Your account is deactivated. Contact your HR administrator.' });
+    const invitation = await prisma.userInvitation.findFirst({ where: { userId: user.id, acceptedAt: null, expiresAt: { gt: new Date() } } });
+    if (!invitation) return res.status(400).json({ error: 'There is no pending invitation for this account' });
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(newPassword), emailVerifiedAt: new Date() } }),
+      prisma.userInvitation.update({ where: { id: invitation.id }, data: { acceptedAt: new Date() } }),
+    ]);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Could not activate account' });
+  }
+});
+
+router.post('/verify-email-code', async (req: Request, res: Response) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const code = String(req.body?.code || '').trim();
+    if (!email || !/^\d{8}$/.test(code)) return res.status(400).json({ error: 'Enter the 8-digit code sent to your work email' });
+
+    const nowMs = Date.now();
+    for (const [key, attempts] of emailCodeAttempts) if (attempts.resetAt <= nowMs) emailCodeAttempts.delete(key);
+    const attemptKey = `${req.ip}:${email}`;
+    const current = emailCodeAttempts.get(attemptKey);
+    if (current && current.resetAt > nowMs && current.count >= 8) return res.status(429).json({ error: 'Too many attempts. Request a new code and try again later.' });
+    emailCodeAttempts.set(attemptKey, current && current.resetAt > nowMs ? { ...current, count: current.count + 1 } : { count: 1, resetAt: nowMs + 15 * 60 * 1000 });
+
+    const record = await prisma.emailVerificationToken.findFirst({
+      where: { tokenHash: hashToken(`${email}:${code}`), usedAt: null, expiresAt: { gt: new Date() }, user: { email } },
+      include: { user: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!record || record.user.emailVerifiedAt) return res.status(400).json({ error: 'That code is invalid or has expired. Request a new one and try again.' });
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: record.userId }, data: { emailVerifiedAt: new Date(), onboardingCompleted: record.user.role === 'HR' ? true : undefined } }),
+      prisma.emailVerificationToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
+    ]);
+    emailCodeAttempts.delete(attemptKey);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Could not verify this code' });
+  }
+});
+
+router.post('/accept-invite', async (req: Request, res: Response) => {
+  try {
+    const { token, password } = req.body as { token?: string; password?: string };
+    if (!token || !password || password.length < 8) return res.status(400).json({ error: 'Use a valid invitation and a password of at least 8 characters' });
+    const invitation = await prisma.userInvitation.findFirst({
+      where: { tokenHash: hashToken(token), acceptedAt: null, expiresAt: { gt: new Date() } },
+    });
+    if (!invitation) return res.status(400).json({ error: 'Invitation is invalid or expired' });
+    const passwordHash = await hashPassword(password);
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: invitation.userId }, data: { passwordHash, emailVerifiedAt: new Date() } }),
+      prisma.userInvitation.update({ where: { id: invitation.id }, data: { acceptedAt: new Date() } }),
+    ]);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to accept invitation' });
   }
 });
 

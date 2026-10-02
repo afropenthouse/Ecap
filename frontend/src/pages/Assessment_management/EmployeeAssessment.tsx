@@ -11,6 +11,7 @@ import {
   getAssessments,
   listUsers,
   getCompetencies,
+  getProficiencyLevels,
   getDepartments,
   createAssessorAssessment,
   addAssessmentRating,
@@ -20,6 +21,7 @@ import {
   Competency as BackendCompetency,
   Department as BackendDepartment,
   UserSummary,
+  ProficiencyLevel,
 } from "../../api/services";
 
 interface Employee {
@@ -90,6 +92,7 @@ export default function EmployeeAssessment() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [competencies, setCompetencies] = useState<Competency[]>([]);
+  const [proficiencyLevels, setProficiencyLevels] = useState<ProficiencyLevel[]>([]);
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [employeeProfile, setEmployeeProfile] = useState<any>(null);
   const [formData, setFormData] = useState<{
@@ -124,11 +127,12 @@ export default function EmployeeAssessment() {
         console.log('Loading assessment data for user:', user?.id);
 
         // Fetch data from backend
-        const [deptRes, compRes, assRes, usersRes] = await Promise.all([
+        const [deptRes, compRes, assRes, usersRes, levelsRes] = await Promise.all([
           getDepartments(),
           getCompetencies(),
           getAssessments(),
           listUsers(),
+          getProficiencyLevels(),
         ]);
         
         // Process departments
@@ -138,6 +142,7 @@ export default function EmployeeAssessment() {
         // Process competencies
         const compList = compRes || [];
         setCompetencies(compList.map(c => ({ id: c.id, name: c.name })));
+        setProficiencyLevels([...(levelsRes || [])].sort((a, b) => a.levelNumber - b.levelNumber));
         
         // Process users
         const usersList = usersRes || [];
@@ -873,11 +878,7 @@ export default function EmployeeAssessment() {
                               className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white"
                             >
                               <option value="">Select rating</option>
-                              <option value="1">1 - Needs Improvement</option>
-                              <option value="2">2 - Developing</option>
-                              <option value="3">3 - Competent</option>
-                              <option value="4">4 - Proficient</option>
-                              <option value="5">5 - Expert</option>
+                              {proficiencyLevels.map(level => <option key={level.id} value={level.levelNumber}>{level.levelNumber} - {level.label}</option>)}
                             </select>
                           </div>
                           <textarea

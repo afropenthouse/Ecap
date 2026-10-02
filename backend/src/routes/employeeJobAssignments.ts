@@ -4,22 +4,38 @@ import { authMiddleware, rbac } from '../middleware/auth';
 
 const router = Router();
 
+// Return the most recently effective job assignment for the signed-in employee.
+router.get('/current', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (req.user!.role !== 'EMPLOYEE') return res.status(403).json({ error: 'Employee access only' });
+    const assignment = await prisma.employeeJobAssignment.findFirst({
+      where: {
+        organizationId: req.user!.organizationId,
+        employeeId: req.user!.id,
+        OR: [{ startDate: null }, { startDate: { lte: new Date() } }],
+      },
+      orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+      include: { job: { include: { department: true, requirements: true } } },
+    });
+    res.json(assignment);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to load current job assignment' });
+  }
+});
+
 // List job assignments
 router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const whereBase: any = { organizationId: req.user!.organizationId };
-    // Role-specific filtering
-    if (req.user!.role === 'EMPLOYEE') {
-      whereBase.employeeId = req.user!.id;
-    }
-
     const { employeeId, jobId } = req.query as { employeeId?: string; jobId?: string };
-    const where = {
-      ...whereBase,
-      ...(employeeId ? { employeeId } : {}),
-      ...(jobId ? { jobId } : {}),
-    };
-
+    const where: any = { organizationId: req.user!.organizationId };
+    if (req.user!.role === 'EMPLOYEE') {
+      // A query-string employeeId must never let an employee read another person's assignments.
+      where.employeeId = req.user!.id;
+    } else if (employeeId) {
+      where.employeeId = employeeId;
+    }
+    if (jobId) where.jobId = jobId;
     const rows = await prisma.employeeJobAssignment.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -46,6 +62,7 @@ router.post('/', authMiddleware, rbac(['HR']), async (req: Request, res: Respons
     if (employee.organizationId !== req.user!.organizationId || job.organizationId !== req.user!.organizationId) {
       return res.status(403).json({ error: 'Forbidden' });
     }
+    if (employee.role !== 'EMPLOYEE') return res.status(400).json({ error: 'Job roles can only be assigned to employees' });
 
     const created = await prisma.employeeJobAssignment.create({
       data: {
@@ -56,7 +73,7 @@ router.post('/', authMiddleware, rbac(['HR']), async (req: Request, res: Respons
       },
       include: { job: { include: { department: true } } },
     });
-    res.json(created);
+    res.status(201).json(created);
   } catch (e) {
     console.error(e);
     if ((e as any)?.code === 'P2002') {
@@ -79,6 +96,7 @@ router.put('/:id', authMiddleware, rbac(['HR']), async (req: Request, res: Respo
     if (employeeId) {
       const employee = await prisma.user.findUnique({ where: { id: employeeId } });
       if (!employee || employee.organizationId !== req.user!.organizationId) return res.status(400).json({ error: 'Invalid employee' });
+      if (employee.role !== 'EMPLOYEE') return res.status(400).json({ error: 'Job roles can only be assigned to employees' });
     }
     if (jobId) {
       const job = await prisma.job.findUnique({ where: { id: jobId } });

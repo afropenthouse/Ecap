@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ThemeToggleButton } from "../../components/common/ThemeToggleButton";
-import { resendEmailVerification, verifyEmail } from "../../api/services";
+import { resendEmailVerification, verifyEmail, verifyEmailCode } from "../../api/services";
 
 export default function EmailConfirmation() {
   const [error, setError] = useState<string | null>(null);
@@ -10,32 +10,26 @@ export default function EmailConfirmation() {
   const [verified, setVerified] = useState(false);
   const location = useLocation();
   const [resendEmail, setResendEmail] = useState("");
-  const [resendSlug, setResendSlug] = useState("");
+  const [code, setCode] = useState("");
 
-  // Helper to read email/slug from navigation state, query, or session
+  // Helper to read the email from navigation state, query, or session
   const getContext = () => {
     const state = (location.state as any) || {};
     const searchParams = new URLSearchParams(location.search);
     const qEmail = searchParams.get("email") || "";
-    const qSlug = searchParams.get("slug") || "";
     const email = qEmail || state?.email || sessionStorage.getItem("pendingEmail") || "";
-    const slug = qSlug || state?.slug || sessionStorage.getItem("pendingSlug") || "";
-    return { email, slug };
+    return { email };
   };
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const token = searchParams.get("token");
     const qEmail = searchParams.get("email");
-    const qSlug = searchParams.get("slug");
 
     // Persist query-provided context for resend convenience
     if (qEmail) sessionStorage.setItem("pendingEmail", qEmail);
-    if (qSlug) sessionStorage.setItem("pendingSlug", qSlug);
-
-    const { email, slug } = getContext();
+    const { email } = getContext();
     setResendEmail(email);
-    setResendSlug(slug);
 
     if (token) {
       setVerifying(true);
@@ -52,7 +46,7 @@ export default function EmailConfirmation() {
     }
 
     // If no token, assume we're in the check-your-email state
-    if (email && slug) {
+    if (email) {
       setEmailSent(true);
     }
   }, []);
@@ -61,14 +55,30 @@ export default function EmailConfirmation() {
     setVerifying(true);
     setError(null);
     try {
-      const { email: ctxEmail, slug: ctxSlug } = getContext();
+      const { email: ctxEmail } = getContext();
       const email = (resendEmail || ctxEmail || "").trim();
-      const slug = (resendSlug || ctxSlug || "").trim();
-      if (!email || !slug) throw new Error("Missing email/organization context");
-      await resendEmailVerification(email, slug);
+      if (!email) throw new Error("Enter your email address");
+      await resendEmailVerification(email);
+      setCode("");
       setEmailSent(true);
     } catch (err: any) {
       setError(err?.message || "Failed to resend verification email");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    setVerifying(true);
+    setError(null);
+    try {
+      const email = resendEmail.trim();
+      if (!email) throw new Error('Enter your work email address');
+      await verifyEmailCode(email, code);
+      setVerified(true);
+      setEmailSent(false);
+    } catch (err: any) {
+      setError(err?.message || 'That code could not be verified');
     } finally {
       setVerifying(false);
     }
@@ -119,29 +129,27 @@ export default function EmailConfirmation() {
                 Return to login
               </Link>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                If you need a new verification link, use the button below.
+                Enter your 8-digit code or request a new one.
               </p>
               <div className="space-y-3">
                 <input
                   type="email"
                   placeholder="Email address"
+                  aria-label="Work email address"
+                  required
                   className="w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                   value={resendEmail}
                   onChange={(e) => setResendEmail(e.target.value)}
                 />
-                <input
-                  type="text"
-                  placeholder="Organization slug (e.g., acme)"
-                  className="w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                  value={resendSlug}
-                  onChange={(e) => setResendSlug(e.target.value)}
-                />
               </div>
+              <input inputMode="numeric" autoComplete="one-time-code" aria-label="8-digit verification code" maxLength={8} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="8-digit verification code" className="w-full rounded-md border border-gray-300 p-3 text-center text-xl tracking-[0.4em] dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+              <button onClick={handleVerifyCode} disabled={verifying || code.length !== 8} className="w-full rounded-md bg-blue-600 py-2 px-4 text-sm font-medium text-white disabled:opacity-50">{verifying ? 'Verifying…' : 'Verify code'}</button>
               <button
                 onClick={handleResendEmail}
-                className="w-full bg-indigo-600 py-2 px-4 border border-transparent rounded-md text-sm font-medium text-white hover:bg-indigo-700"
+                disabled={verifying}
+                className="w-full bg-indigo-600 py-2 px-4 border border-transparent rounded-md text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
               >
-                Resend verification email
+                Resend code
               </button>
             </div>
           </div>
@@ -167,7 +175,7 @@ export default function EmailConfirmation() {
               Email Verified!
             </h2>
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              Your email has been successfully verified. You can now access your account.
+              Your work email is verified. Your HR workspace is ready; sign in to continue onboarding your team.
             </p>
             <div className="mt-4 space-y-4">
               <Link
@@ -196,34 +204,31 @@ export default function EmailConfirmation() {
             </svg>
           </div>
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900 dark:text-white">
-            Check your email
+            Verify your work email
           </h2>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            We've sent you an email with a confirmation link. Please check your inbox and click the link to verify your email address.
+            We sent an 8-digit code to your work email. Enter it here to activate your HR account and open your company workspace.
           </p>
           <div className="mt-6 space-y-4">
             <div className="space-y-3">
               <input
                 type="email"
                 placeholder="Email address"
+                aria-label="Work email address"
+                required
                 className="w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                 value={resendEmail}
                 onChange={(e) => setResendEmail(e.target.value)}
               />
-              <input
-                type="text"
-                placeholder="Organization slug (e.g., acme)"
-                className="w-full rounded-md border border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                value={resendSlug}
-                onChange={(e) => setResendSlug(e.target.value)}
-              />
+              <input inputMode="numeric" autoComplete="one-time-code" aria-label="8-digit verification code" maxLength={8} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="8-digit verification code" className="w-full rounded-md border border-gray-300 p-3 text-center text-xl tracking-[0.4em] dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
             </div>
+            <button onClick={handleVerifyCode} disabled={verifying || code.length !== 8 || !resendEmail} className="w-full rounded-md bg-blue-600 py-2 px-4 text-sm font-medium text-white disabled:opacity-50">{verifying ? 'Verifying…' : 'Verify code'}</button>
             <button
               onClick={handleResendEmail}
               disabled={verifying}
               className="w-full bg-indigo-600 py-2 px-4 border border-transparent rounded-md text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {verifying ? "Sending..." : "Resend Verification Email"}
+              {verifying ? "Sending..." : "Resend code"}
             </button>
             <Link
               to="/auth/login"

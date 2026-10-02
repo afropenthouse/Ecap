@@ -4,23 +4,25 @@ import { authMiddleware, rbac } from '../middleware/auth';
 
 const router = Router();
 
+async function createAssessmentIfSelfIsComplete(organizationId: string, employeeId: string, assessorId: string, tx: any) {
+  const selfAssessment = await tx.assessment.findFirst({
+    where: { organizationId, employeeId, type: 'SELF', status: { in: ['COMPLETED', 'REVIEWED'] } },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (!selfAssessment) return;
+  const existing = await tx.assessment.findFirst({ where: { organizationId, employeeId, assessorId, type: 'ASSESSOR' } });
+  if (!existing) await tx.assessment.create({ data: { organizationId, employeeId, assessorId, type: 'ASSESSOR', status: 'PENDING' } });
+}
+
 // List assessor assignments
 router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const whereBase: any = { organizationId: req.user!.organizationId };
-    // Role-specific filtering
-    if (req.user!.role === 'ASSESSOR') {
-      whereBase.assessorId = req.user!.id;
-    } else if (req.user!.role === 'EMPLOYEE') {
-      whereBase.employeeId = req.user!.id;
-    }
-
     const { employeeId, assessorId } = req.query as { employeeId?: string; assessorId?: string };
-    const where = {
-      ...whereBase,
-      ...(employeeId ? { employeeId } : {}),
-      ...(assessorId ? { assessorId } : {}),
-    };
+    const where: any = { organizationId: req.user!.organizationId };
+    if (req.user!.role === 'ASSESSOR') where.assessorId = req.user!.id;
+    else if (assessorId) where.assessorId = assessorId;
+    if (req.user!.role === 'EMPLOYEE') where.employeeId = req.user!.id;
+    else if (employeeId) where.employeeId = employeeId;
 
     const rows = await prisma.assessorAssignment.findMany({
       where,
@@ -70,14 +72,14 @@ router.post('/', authMiddleware, rbac(['HR']), async (req: Request, res: Respons
     if (employee.role !== 'EMPLOYEE') return res.status(400).json({ error: 'Selected user is not an employee' });
 
     try {
-      const created = await prisma.assessorAssignment.create({
-        data: {
-          organizationId: req.user!.organizationId,
-          assessorId,
-          employeeId,
-        },
+      const created = await prisma.$transaction(async tx => {
+        const assignment = await tx.assessorAssignment.create({
+          data: { organizationId: req.user!.organizationId, assessorId, employeeId },
+        });
+        await createAssessmentIfSelfIsComplete(req.user!.organizationId, employeeId, assessorId, tx);
+        return assignment;
       });
-      res.json(created);
+      res.status(201).json(created);
     } catch (err: any) {
       if (err?.code === 'P2002') {
         return res.status(409).json({ error: 'Assignment already exists for assessor and employee' });
@@ -99,23 +101,26 @@ router.put('/:id', authMiddleware, rbac(['HR']), async (req: Request, res: Respo
     const existing = await prisma.assessorAssignment.findUnique({ where: { id } });
     if (!existing || existing.organizationId !== req.user!.organizationId) return res.status(404).json({ error: 'Assignment not found' });
 
-    // Optional: validate new ids belong to org
-    if (assessorId) {
-      const assessor = await prisma.user.findUnique({ where: { id: assessorId } });
-      if (!assessor || assessor.organizationId !== req.user!.organizationId) return res.status(400).json({ error: 'Invalid assessor' });
+    const [assessor, employee] = await Promise.all([
+      prisma.user.findUnique({ where: { id: assessorId ?? existing.assessorId } }),
+      prisma.user.findUnique({ where: { id: employeeId ?? existing.employeeId } }),
+    ]);
+    if (!assessor || assessor.organizationId !== req.user!.organizationId || assessor.role !== 'ASSESSOR') {
+      return res.status(400).json({ error: 'Select an assessor from your organization' });
     }
-    if (employeeId) {
-      const employee = await prisma.user.findUnique({ where: { id: employeeId } });
-      if (!employee || employee.organizationId !== req.user!.organizationId) return res.status(400).json({ error: 'Invalid employee' });
+    if (!employee || employee.organizationId !== req.user!.organizationId || employee.role !== 'EMPLOYEE') {
+      return res.status(400).json({ error: 'Select an employee from your organization' });
     }
 
-    const updated = await prisma.assessorAssignment.update({
-      where: { id },
-      data: { assessorId, employeeId },
+    const updated = await prisma.$transaction(async tx => {
+      const assignment = await tx.assessorAssignment.update({ where: { id }, data: { assessorId, employeeId } });
+      await createAssessmentIfSelfIsComplete(req.user!.organizationId, employeeId ?? existing.employeeId, assessorId ?? existing.assessorId, tx);
+      return assignment;
     });
     res.json(updated);
   } catch (e) {
     console.error(e);
+    if ((e as any)?.code === 'P2002') return res.status(409).json({ error: 'Assignment already exists for this assessor and employee' });
     res.status(500).json({ error: 'Failed to update assignment' });
   }
 });

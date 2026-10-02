@@ -12,6 +12,7 @@ import {
   getAssessments,
   listUsers,
   getCompetencies,
+  getProficiencyLevels,
   addAssessmentRating,
   updateAssessmentStatus,
   getMyAssignedEmployees,
@@ -21,6 +22,7 @@ import {
   type Assessment,
   type AssessmentRating,
   type Competency,
+  type ProficiencyLevel,
   type UserSummary
 } from "../../../api/services";
 import jsPDF from 'jspdf';
@@ -77,6 +79,7 @@ export default function AssessorAssessment() {
   const [error, setError] = useState<string | null>(null);
   const [assessments, setAssessments] = useState<EmployeeAssessment[]>([]);
   const [competencies, setCompetencies] = useState<Competency[]>([]);
+  const [proficiencyLevels, setProficiencyLevels] = useState<ProficiencyLevel[]>([]);
   const [assignedEmployees, setAssignedEmployees] = useState<User[]>([]);
   const [jobAssignments, setJobAssignments] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
@@ -109,7 +112,7 @@ export default function AssessorAssessment() {
         console.log('Loading assessor data...');
 
         // Fetch all necessary data in parallel with error handling for each
-        let allAssessments, users, comps, assignments, jobAssigns, depts, jobsData;
+        let allAssessments, users, comps, assignments, jobAssigns, depts, jobsData, levels;
         
         try {
           [
@@ -119,7 +122,8 @@ export default function AssessorAssessment() {
             assignments, 
             jobAssigns, 
             depts, 
-            jobsData
+            jobsData,
+            levels
           ] = await Promise.all([
             getAssessments().catch(e => { console.error('getAssessments failed:', e); return []; }),
             listUsers().catch(e => { console.error('listUsers failed:', e); return []; }),
@@ -127,7 +131,8 @@ export default function AssessorAssessment() {
             getMyAssignedEmployees().catch(e => { console.error('getMyAssignedEmployees failed:', e); return []; }),
             getEmployeeJobAssignments().catch(e => { console.error('getEmployeeJobAssignments failed:', e); return []; }),
             getDepartments().catch(e => { console.error('getDepartments failed:', e); return []; }),
-            getJobs().catch(e => { console.error('getJobs failed:', e); return []; })
+            getJobs().catch(e => { console.error('getJobs failed:', e); return []; }),
+            getProficiencyLevels().catch(e => { console.error('getProficiencyLevels failed:', e); return []; })
           ]);
           console.log('All data fetched successfully');
         } catch (err) {
@@ -137,6 +142,7 @@ export default function AssessorAssessment() {
 
         // Set basic data
         setCompetencies(comps || []);
+        setProficiencyLevels([...(levels || [])].sort((a, b) => a.levelNumber - b.levelNumber));
         setAssignedEmployees(assignments || []);
         setJobAssignments(jobAssigns || []);
         setDepartments(depts || []);
@@ -256,7 +262,11 @@ export default function AssessorAssessment() {
             progress: compRatings.length,
             competency_ratings: compRatings,
             assessor_id: assessorAssessment.assessorId,
-            assessor_name: user.email,
+            assessor_name: assessorAssessment.assessorId
+              ? (userById[assessorAssessment.assessorId]?.firstName || userById[assessorAssessment.assessorId]?.lastName
+                ? `${userById[assessorAssessment.assessorId]?.firstName || ''} ${userById[assessorAssessment.assessorId]?.lastName || ''}`.trim()
+                : userById[assessorAssessment.assessorId]?.email || 'Unknown assessor')
+              : 'Unassigned',
             assessor_rating: overallRating,
             assessor_comments: '',
             assessor_status: assessorAssessment.status === 'REVIEWED' ? 'reviewed' : 'pending',
@@ -339,6 +349,7 @@ export default function AssessorAssessment() {
 
   // Handle rating an assessment
   const handleRateAssessment = (assessment: EmployeeAssessment) => {
+    if (assessment.assessor_id !== user?.id || assessment.status === 'REVIEWED') return;
     setSelectedAssessment(assessment);
 
     // Initialize form data with existing ratings
@@ -363,21 +374,27 @@ export default function AssessorAssessment() {
   // Handle saving assessor ratings via backend services
   const handleSaveRatings = async () => {
     if (!selectedAssessment || !user) return;
+    if (selectedAssessment.assessor_id !== user.id) {
+      setError('You can view this assessment, but only its assigned assessor can submit ratings.');
+      return;
+    }
+    if (formData.competency_ratings.length === 0 || formData.competency_ratings.some(rating => rating.assessor_rating <= 0)) {
+      setError('Choose a proficiency level for every required competency before submitting your assessment.');
+      return;
+    }
 
     try {
       setLoading(true);
       setError(null);
 
       // Save each competency rating
-      for (const rating of formData.competency_ratings) {
-        if (rating.assessor_rating > 0 || rating.assessor_comments) {
-          await addAssessmentRating(selectedAssessment.id, {
+      await Promise.all(formData.competency_ratings.map(rating =>
+        addAssessmentRating(selectedAssessment.id, {
             competencyId: rating.competency_id,
-            rating: rating.assessor_rating || 0,
+            rating: rating.assessor_rating,
             comment: rating.assessor_comments || '',
-          });
-        }
-      }
+          })
+      ));
 
       // Update assessment status to REVIEWED
       await updateAssessmentStatus(selectedAssessment.id, 'REVIEWED');
@@ -590,14 +607,19 @@ export default function AssessorAssessment() {
                           : "This assessment needs your review. Rate the employee's competencies and provide feedback."}
                       </p>
                     </div>
+                    <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                      Assigned assessor: {assessment.assessor_name || 'Unassigned'}{assessment.assessor_id === user?.id ? ' (you)' : ''}
+                    </p>
 
                     {/* Action Buttons */}
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleRateAssessment(assessment)}
-                        className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+                        disabled={assessment.assessor_id !== user?.id || assessment.status === 'REVIEWED'}
+                        title={assessment.assessor_id !== user?.id ? `Assigned to ${assessment.assessor_name || 'another assessor'}` : assessment.status === 'REVIEWED' ? 'This assessment is finalized' : undefined}
+                        className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
                       >
-                        {assessment.assessor_rating ? 'Edit Rating' : 'Rate Assessment'}
+                        {assessment.assessor_id !== user?.id ? 'View Only' : assessment.status === 'REVIEWED' ? 'Reviewed' : assessment.assessor_rating ? 'Continue Rating' : 'Rate Assessment'}
                       </button>
                       <button
                         onClick={() => exportToPDF(assessment)}
@@ -647,18 +669,18 @@ export default function AssessorAssessment() {
                       Your Overall Rating
                     </label>
                     <div className="flex items-center gap-2">
-                      {[1, 2, 3, 4, 5].map((rating) => (
+                      {proficiencyLevels.map((level) => (
                         <button
-                          key={rating}
+                          key={level.id}
                           type="button"
-                          onClick={() => setFormData({...formData, assessor_rating: rating})}
+                          onClick={() => setFormData({...formData, assessor_rating: level.levelNumber})}
                           className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                            formData.assessor_rating >= rating
+                            formData.assessor_rating >= level.levelNumber
                               ? 'bg-yellow-400 text-white'
                               : 'bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300'
                           }`}
                         >
-                          {rating}
+                          {level.levelNumber}
                         </button>
                       ))}
                     </div>
@@ -693,7 +715,7 @@ export default function AssessorAssessment() {
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                             <div>
                               <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                                Employee Rating: {rating.rating}/5
+                                Employee Rating: {rating.rating}/{proficiencyLevels[proficiencyLevels.length - 1]?.levelNumber || 0}
                               </p>
                               <p className="text-sm text-gray-600 dark:text-gray-300">
                                 {rating.comments || 'No comments provided'}
@@ -704,18 +726,19 @@ export default function AssessorAssessment() {
                                 Your Rating
                               </label>
                               <div className="flex items-center gap-2 mb-2">
-                                {[1, 2, 3, 4, 5].map((r) => (
+                                {proficiencyLevels.map((level) => (
                                   <button
-                                    key={r}
+                                    key={level.id}
                                     type="button"
-                                    onClick={() => handleRatingChange(rating.competency_id, 'assessor_rating', r)}
+                                    title={level.label}
+                                    onClick={() => handleRatingChange(rating.competency_id, 'assessor_rating', level.levelNumber)}
                                     className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                      rating.assessor_rating >= r
+                                      rating.assessor_rating >= level.levelNumber
                                         ? 'bg-yellow-400 text-white'
                                         : 'bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300'
                                     }`}
                                   >
-                                    {r}
+                                    {level.levelNumber}
                                   </button>
                                 ))}
                               </div>

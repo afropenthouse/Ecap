@@ -1,7 +1,7 @@
 // Lightweight API client using fetch with JWT support
 // Reads base URL from Vite env `VITE_API_BASE_URL` or defaults to localhost
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 // Base URL resolution:
 // - Prefer VITE_API_BASE_URL when set
@@ -11,23 +11,21 @@ function resolveBaseUrl(): string {
   const envUrl = (import.meta as any).env?.VITE_API_BASE_URL as string | undefined;
   if (envUrl && envUrl.trim()) return envUrl.trim();
 
-  // Known production/staging backends
-  const knownUrls = [
-    // Render (production)
-    'https://ecap-project.onrender.com/api',
-  ];
-
-  // If the frontend is being served from Render for any reason, prefer same-origin + /api
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
     const origin = window.location.origin;
+
+    // Local development must use the local API instead of silently sending writes to production.
+    if (host === 'localhost' || host === '127.0.0.1') return `http://${host}:4000/api`;
+
+    // If the frontend is served from Render, use its same-origin API.
     if (host.endsWith('onrender.com')) {
-      knownUrls.unshift(`${origin}/api`);
+      return `${origin}/api`;
     }
   }
 
-  // Return first known URL, otherwise local dev
-  return knownUrls[0] || 'http://localhost:4000/api';
+  // Production fallback for deployments hosted outside Render.
+  return 'https://ecap-project.onrender.com/api';
 }
 
 const BASE_URL = resolveBaseUrl();
@@ -99,6 +97,7 @@ export const api = {
   get: <T = any>(path: string) => apiFetch<T>(path, { method: 'GET' }),
   post: <T = any>(path: string, body?: any) => apiFetch<T>(path, { method: 'POST', body }),
   put: <T = any>(path: string, body?: any) => apiFetch<T>(path, { method: 'PUT', body }),
+  patch: <T = any>(path: string, body?: any) => apiFetch<T>(path, { method: 'PATCH', body }),
   delete: <T = any>(path: string) => apiFetch<T>(path, { method: 'DELETE' }),
 };
 

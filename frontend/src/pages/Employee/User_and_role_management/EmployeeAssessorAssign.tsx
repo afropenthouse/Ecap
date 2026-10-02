@@ -6,15 +6,15 @@ import { listAssessorAssignments, listEmployeeJobAssignments, getJobs, type Job,
 
 // View model aligned to backend
 type AssessorAssignmentView = {
+  id: string;
   assessorName: string;
-  departmentName?: string;
   jobTitle?: string;
   assignedAt?: string;
 };
 
 export default function EmployeeAssessorAssign() {
   const { user } = useAuth();
-  const [assignment, setAssignment] = useState<AssessorAssignmentView | null>(null);
+  const [assignments, setAssignments] = useState<AssessorAssignmentView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,38 +37,21 @@ export default function EmployeeAssessorAssign() {
 
       // Fetch assignment - now includes assessor details from backend
       const assignmentsRecs = await listAssessorAssignments({ employeeId: user.id });
-
-      console.log('Employee Assessor Assignment Data:', {
-        assignments: assignmentsRecs
-      });
-
-      const current: BackendAssessorAssignment | undefined = assignmentsRecs[0];
-      if (!current) {
-        setAssignment(null);
-        setLoading(false);
-        return;
-      }
-
-      // Get assessor name from the included assessor object
-      const assessorName = current.assessor 
-        ? `${current.assessor.firstName ?? ''} ${current.assessor.lastName ?? ''}`.trim() || current.assessor.email
-        : current.assessorId;
-
-      // Fetch job data to show department and job title
       const [jobsRecs, jobAssignRecs] = await Promise.all([
         getJobs(),
         listEmployeeJobAssignments({ employeeId: user.id }),
       ]);
-      
-      const latestJob: EmployeeJobRecord | undefined = jobAssignRecs[jobAssignRecs.length - 1];
+      const latestJob: EmployeeJobRecord | undefined = jobAssignRecs[0];
       const job: Job | undefined = latestJob ? jobsRecs.find(j => j.id === latestJob.jobId) : undefined;
-      
-      setAssignment({
-        assessorName,
-        departmentName: job?.department?.name || undefined,
+
+      setAssignments(assignmentsRecs.map((current: BackendAssessorAssignment) => ({
+        id: current.id,
+        assessorName: current.assessor
+          ? `${current.assessor.firstName ?? ''} ${current.assessor.lastName ?? ''}`.trim() || current.assessor.email
+          : current.assessorId,
         jobTitle: job?.title || undefined,
-        assignedAt: latestJob?.startDate,
-      });
+        assignedAt: latestJob?.startDate || latestJob?.createdAt,
+      })));
       setLoading(false);
     } catch (err: any) {
       console.error("Error fetching assessor assignment:", err);
@@ -109,8 +92,10 @@ export default function EmployeeAssessorAssign() {
         </div>
       )}
       {/* Assessor Card */}
-      {!loading && !error && assignment && (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
+      {!loading && !error && assignments.length > 0 && (
+        <div className="space-y-4">
+        {assignments.map(assignment => (
+        <div key={assignment.id} className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
           <div className="p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between">
               <div className="flex items-center mb-4 md:mb-0">
@@ -126,15 +111,11 @@ export default function EmployeeAssessorAssign() {
                 <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Assignment Details</h4>
                 <div className="grid grid-cols-1 gap-2">
                   <div>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">Department: </span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">{assignment.departmentName ?? '—'}</span>
-                  </div>
-                  <div>
                     <span className="text-xs text-gray-500 dark:text-gray-400">Job Role: </span>
                     <span className="text-sm font-medium text-gray-900 dark:text-white">{assignment.jobTitle ?? '—'}</span>
                   </div>
                   <div>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">Assigned on: </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Job assignment date: </span>
                     <span className="text-sm font-medium text-gray-900 dark:text-white">
                       {assignment.assignedAt ? new Date(assignment.assignedAt).toLocaleDateString() : '—'}
                     </span>
@@ -144,9 +125,11 @@ export default function EmployeeAssessorAssign() {
             </div>
           </div>
         </div>
+        ))}
+        </div>
       )}
       {/* No Assessor State */}
-      {!loading && !error && !assignment && (
+      {!loading && !error && assignments.length === 0 && (
         <div className="flex flex-col items-center justify-center py-12">
           <UserIcon className="size-12 text-gray-400 mb-4" />
           <h3 className="text-lg font-medium text-gray-900 dark:text-white">No assessor assigned yet</h3>

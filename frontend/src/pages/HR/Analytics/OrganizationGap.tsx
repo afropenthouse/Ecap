@@ -242,20 +242,35 @@ function OrganizationGap() {
 
         if (!isMounted) return;
 
-        // Filter for ASSESSOR type assessments with REVIEWED status
+        // Compare only reviewed assessor ratings with matching completed self ratings.
+        const selfByEmployee = new Map<string, Assessment>();
+        allAssessments
+          .filter(assessment => assessment.type === 'SELF' && assessment.status === 'COMPLETED')
+          .forEach(assessment => {
+            if (!selfByEmployee.has(assessment.employeeId)) selfByEmployee.set(assessment.employeeId, assessment);
+          });
+
         const reviewedAssessorAssessments = allAssessments.filter(
-          (a) => a.type === 'ASSESSOR' && a.status === 'REVIEWED'
+          assessment => assessment.type === 'ASSESSOR' && assessment.status === 'REVIEWED'
         );
 
-        // Get corresponding SELF assessments to combine ratings
-        const employeeIds = [...new Set(reviewedAssessorAssessments.map(a => a.employeeId))];
-        const selfAssessments = allAssessments.filter(
-          (a) => a.type === 'SELF' && employeeIds.includes(a.employeeId)
-        );
-
-        // Process assessments to match expected format
-        const processedData: EmployeeAssessment[] = reviewedAssessorAssessments.map(assessorAssessment => {
-          const selfAssessment = selfAssessments.find(s => s.employeeId === assessorAssessment.employeeId);
+        const processedData: EmployeeAssessment[] = reviewedAssessorAssessments.flatMap(assessorAssessment => {
+          const selfAssessment = selfByEmployee.get(assessorAssessment.employeeId);
+          if (!selfAssessment) return [];
+          const selfRatingsByCompetency = new Map((selfAssessment.ratings || []).map(rating => [rating.competencyId, rating]));
+          const comparableRatings = (assessorAssessment.ratings || []).flatMap(assessorRating => {
+            const selfRating = selfRatingsByCompetency.get(assessorRating.competencyId);
+            if (!selfRating) return [];
+            return [{
+              id: assessorRating.id,
+              competency_id: assessorRating.competencyId,
+              rating: selfRating.rating,
+              comments: selfRating.comment || '',
+              assessor_rating: assessorRating.rating,
+              assessor_comments: assessorRating.comment || '',
+            }];
+          });
+          if (comparableRatings.length === 0) return [];
           const employee = users.find(u => u.id === assessorAssessment.employeeId);
           const jobAssignment = jobAssigns.find(ja => ja.employeeId === assessorAssessment.employeeId);
           const dept = depts.find(d => d.id === jobAssignment?.job?.departmentId);
@@ -275,14 +290,7 @@ function OrganizationGap() {
             last_updated: assessorAssessment.completedAt || assessorAssessment.createdAt,
             status: assessorAssessment.status,
             progress: 100,
-            competency_ratings: (assessorAssessment.ratings || []).map((rating: any) => ({
-              id: rating.id,
-              competency_id: rating.competencyId,
-              rating: rating.rating || 0,
-              comments: rating.comments || '',
-              assessor_rating: rating.rating || 0,
-              assessor_comments: rating.comments || ''
-            })),
+            competency_ratings: comparableRatings,
             assessor_id: assessorAssessment.assessorId || undefined,
             assessor_status: assessorAssessment.status
           };
@@ -324,13 +332,7 @@ function OrganizationGap() {
             id: c.id,
             name: c.name
           }));
-          setCompetencies(competenciesWithIds.length > 0 ? competenciesWithIds : [
-            { id: '1', name: 'Communication' },
-            { id: '2', name: 'Problem Solving' },
-            { id: '3', name: 'Leadership' },
-            { id: '4', name: 'Technical Skills' },
-            { id: '5', name: 'Teamwork' }
-          ]);
+          setCompetencies(competenciesWithIds);
         }
 
         // Process performance appraisals
@@ -1404,14 +1406,18 @@ const OrganizationCharts: React.FC<OrganizationChartsProps> = ({ assessments, co
         ],
       };
     } else {
-      // Calculate overall averages for pie chart
-      const avgSelfRating = avgSelfRatings.reduce((sum, r) => sum + r, 0) / avgSelfRatings.length;
-      const avgAssessorRating = avgAssessorRatings.reduce((sum, r) => sum + r, 0) / avgAssessorRatings.length;
+      // Ignore competencies without paired ratings so missing data is not counted as zero.
+      const comparableCompetencyIndexes = competencyIds
+        .map((_id, index) => index)
+        .filter(index => selfRatings[competencyIds[index]].length > 0 && assessorRatings[competencyIds[index]].length > 0);
+      if (comparableCompetencyIndexes.length === 0) return null;
+      const avgSelfRating = comparableCompetencyIndexes.reduce((sum, index) => sum + avgSelfRatings[index], 0) / comparableCompetencyIndexes.length;
+      const avgAssessorRating = comparableCompetencyIndexes.reduce((sum, index) => sum + avgAssessorRatings[index], 0) / comparableCompetencyIndexes.length;
       const overallGap = Math.abs(avgAssessorRating - avgSelfRating);
 
       // Calculate agreement percentage (inverse of gap)
       const maxPossibleGap = 4; // Maximum possible gap is 4 (between 1 and 5)
-      const agreementPercentage = 100 - (overallGap / maxPossibleGap * 100);
+      const agreementPercentage = Math.max(0, Math.min(100, 100 - (overallGap / maxPossibleGap * 100)));
 
       return {
         labels: ['Agreement', 'Gap'],

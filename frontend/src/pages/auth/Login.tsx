@@ -1,29 +1,28 @@
-import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+﻿import { useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ThemeToggleButton } from "../../components/common/ThemeToggleButton";
 import { useAuth } from "../../context/AuthContext";
-import { listOrganizationsPublic } from "../../api/services";
+import { api } from "../../api/client";
+
+function PasswordEye({ visible }: { visible: boolean }) {
+  return visible
+    ? <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="size-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8"/><path strokeLinecap="round" strokeLinejoin="round" d="M9.9 5.2A10.8 10.8 0 0112 5c5 0 8.5 4.3 9.5 7-.4 1.1-1.3 2.5-2.6 3.7M6.2 6.2C4.3 7.5 3 9.5 2.5 12c.9 2.7 4.5 7 9.5 7 1.2 0 2.3-.2 3.3-.6"/></svg>
+    : <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="size-5"><path strokeLinecap="round" strokeLinejoin="round" d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg>;
+}
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [slug, setSlug] = useState("");
-  const [organizations, setOrganizations] = useState<{ id: string; name: string; slug: string; logoUrl?: string }[]>([]);
-
-  // Load organizations for dropdown
-  useEffect(() => {
-    (async () => {
-      try {
-        const orgs = await listOrganizationsPublic();
-        setOrganizations(orgs);
-      } catch (err) {
-        console.warn("Failed to load organizations; fallback to slug input");
-      }
-    })();
-  }, []);
+  const [searchParams] = useSearchParams();
+  const organizationId = searchParams.get('organizationId') || undefined;
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
+  const [passwordChangeOpen, setPasswordChangeOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
   const { signIn } = useAuth();
 
@@ -34,34 +33,38 @@ export default function Login() {
     setLoadingMessage("Authenticating...");
 
     try {
-      if (!email || !password || !slug) {
-        throw new Error("Please enter email, password, and organization slug");
+      if (!email || !password) {
+        throw new Error("Please enter your work email and password");
       }
       if (!email.includes('@')) {
         throw new Error("Please enter a valid email address");
       }
 
       setLoadingMessage("Authenticating...");
-      const loggedInUser = await signIn(email, password, slug);
+      const loggedInUser = await signIn(email, password, organizationId);
 
       // Determine redirect based on role from returned user
       const role = loggedInUser?.roles?.[0] || 'employee';
       setLoadingMessage("Redirecting...");
       if (role === 'hr') {
-        navigate("/hr/page-description");
+        navigate("/page-description");
       } else if (role === 'assessor') {
-        navigate("/assessor/page-description");
+        navigate("/page-description");
       } else {
         navigate("/page-description");
       }
     } catch (error) {
       console.error("Login error:", error);
       const msg = error instanceof Error ? error.message : 'An error occurred during login';
+      if (msg === 'PASSWORD_CHANGE_REQUIRED') {
+        setPasswordChangeOpen(true);
+        setError('');
+        return;
+      }
       // If backend enforces email verification, redirect user to verification page
       if (msg.toLowerCase().includes('email not verified')) {
         sessionStorage.setItem('pendingEmail', email);
-        sessionStorage.setItem('pendingSlug', slug);
-        navigate('/auth/email-confirmation', { state: { email, slug } });
+        navigate('/auth/email-confirmation', { state: { email } });
         return;
       }
       setError(msg);
@@ -70,10 +73,27 @@ export default function Login() {
     }
   };
 
-  // Google sign-in is not implemented in custom backend flow
-
-  const handleGoogleSignIn = async () => {
-    setError("Google sign-in is not available");
+  const activateAccount = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError('');
+    if (newPassword !== confirmPassword) return setError('Passwords do not match.');
+    if (newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/\d/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)) {
+      return setError('Use at least 8 characters with uppercase and lowercase letters, a number, and a symbol.');
+    }
+    setLoading(true);
+    try {
+      await api.post('/auth/first-login', { email, temporaryPassword: password, newPassword, ...(organizationId ? { organizationId } : {}) });
+      const loggedInUser = await signIn(email, newPassword, organizationId);
+      const role = loggedInUser?.roles?.[0] || 'employee';
+      setPasswordChangeOpen(false);
+      if (role === 'hr') navigate('/page-description');
+      else if (role === 'assessor') navigate('/page-description');
+      else navigate('/page-description');
+    } catch (activationError) {
+      setError(activationError instanceof Error ? activationError.message : 'Could not activate your account');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -81,7 +101,7 @@ export default function Login() {
       <div className="max-w-md w-full space-y-8">
         <div className="flex justify-between items-center">
           <Link to="/" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">
-            ← Back to Dashboard
+            â† Back to Dashboard
           </Link>
           <ThemeToggleButton />
         </div>
@@ -96,7 +116,7 @@ export default function Login() {
               to="/auth/signup"
               className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
             >
-              create a new account
+              create a company workspace
             </Link>
           </p>
         </div>
@@ -153,39 +173,6 @@ export default function Login() {
               />
             </div>
 
-            <div>
-              {organizations.length > 0 ? (
-                <div>
-                  <label htmlFor="org-select" className="sr-only">Organization</label>
-                  <select
-                    id="org-select"
-                    required
-                    className="appearance-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-800 mb-4"
-                    value={slug}
-                    onChange={(e) => setSlug(e.target.value)}
-                  >
-                    <option value="" disabled>Select your organization</option>
-                    {organizations.map((o) => (
-                      <option key={o.id} value={o.slug}>{o.name}</option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <div>
-                  <label htmlFor="slug" className="sr-only">Organization slug</label>
-                  <input
-                    id="slug"
-                    name="slug"
-                    type="text"
-                    required
-                    className="appearance-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-white rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-800 mb-4"
-                    placeholder="Organization slug (e.g., acme)"
-                    value={slug}
-                    onChange={(e) => setSlug(e.target.value)}
-                  />
-                </div>
-              )}
-            </div>
           </div>
 
           <div>
@@ -216,42 +203,36 @@ export default function Login() {
               </Link>
             </div>
           </div>
-
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300 dark:border-gray-700"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400">
-                  Or continue with
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                disabled={loading}
-                className="w-full flex justify-center items-center py-2 px-4 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
-              >
-                <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-                  <path
-                    fill="currentColor"
-                    d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"
-                  />
-                </svg>
-                Sign in with Google
-              </button>
-            </div>
-          </div>
         </form>
+
+        {passwordChangeOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="presentation">
+          <section role="dialog" aria-modal="true" aria-labelledby="activate-title" className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+            <div className="mb-5 flex size-12 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" aria-hidden="true">âœ“</div>
+            <h2 id="activate-title" className="text-xl font-bold text-gray-900 dark:text-white">Activate your account</h2>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Create a personal password to replace the temporary password from your invitation.</p>
+            {error && <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">{error}</p>}
+            <form onSubmit={activateAccount} className="mt-5 space-y-4">
+              <label className="block text-sm font-medium text-gray-800 dark:text-gray-100">New password<div className="relative mt-1">
+                <input required minLength={8} autoComplete="new-password" type={showNewPassword ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full rounded-lg border border-gray-300 bg-white p-3 pr-12 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+                <button type="button" onClick={() => setShowNewPassword(value => !value)} aria-label={showNewPassword ? 'Hide new password' : 'Show new password'} aria-pressed={showNewPassword} className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"><PasswordEye visible={showNewPassword} /></button>
+              </div></label>
+              <label className="block text-sm font-medium text-gray-800 dark:text-gray-100">Confirm password<div className="relative mt-1">
+                <input required minLength={8} autoComplete="new-password" type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="w-full rounded-lg border border-gray-300 bg-white p-3 pr-12 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+                <button type="button" onClick={() => setShowConfirmPassword(value => !value)} aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'} aria-pressed={showConfirmPassword} className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"><PasswordEye visible={showConfirmPassword} /></button>
+              </div></label>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Use at least 8 characters with uppercase and lowercase letters, a number, and a symbol.</p>
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={() => { setPasswordChangeOpen(false); setNewPassword(''); setConfirmPassword(''); setError(''); }} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 dark:border-gray-700 dark:text-gray-200">Cancel</button>
+                <button disabled={loading} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{loading ? 'Activating...' : 'Save password and continue'}</button>
+              </div>
+            </form>
+          </section>
+        </div>}
 
         {/* Info note */}
         <div className="mt-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm text-gray-600 dark:text-gray-400">
           <p className="font-medium mb-2">Sign-in Info:</p>
-          <p>• Use your organization slug to sign in</p>
+          <p>Use your work email and password. If HR invited you, start with the temporary password in your invitation email.</p>
         </div>
       </div>
     </div>

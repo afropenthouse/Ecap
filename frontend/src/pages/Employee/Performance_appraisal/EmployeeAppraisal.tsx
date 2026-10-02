@@ -23,37 +23,55 @@ import { Modal } from '../../../components/ui/modal';
 const EmployeeAppraisal: React.FC = () => {
   const [appraisals, setAppraisals] = useState<PerformanceAppraisal[]>([]);
   const [questions, setQuestions] = useState<PerformanceAppraisalQuestion[]>([]);
+  const [questionsLoading, setQuestionsLoading] = useState(true);
+  const [questionsError, setQuestionsError] = useState<string | null>(null);
   const [responses, setResponses] = useState<PerformanceAppraisalResponse[]>([]);
   const [currentAppraisal, setCurrentAppraisal] = useState<PerformanceAppraisal | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const questionsPerPage = 20; // Show all 20 questions at once
+  const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
+  const [commentDraft, setCommentDraft] = useState('');
   const { isOpen, openModal, closeModal } = useModal();
 
-  // Load appraisals
-  const fetchAppraisals = async () => {
+  const fetchQuestionList = async () => {
+    setQuestionsLoading(true);
+    setQuestionsError(null);
     try {
-      setLoading(true);
-      const data = await listAppraisals();
-      setAppraisals(data.filter(a => a.type === 'SELF'));
-      setLoading(false);
+      setQuestions(await getAppraisalQuestions());
     } catch (err) {
-      console.error('Error fetching appraisals:', err);
-      setError('Failed to load appraisals');
-      setLoading(false);
+      console.error('Error fetching appraisal questions:', err);
+      setQuestionsError('Questions could not be loaded. Please try again.');
+    } finally {
+      setQuestionsLoading(false);
     }
   };
 
-  // Load questions
-  const fetchQuestions = async () => {
+  // Load the appraisal list independently so question-bank latency never
+  // holds the user's existing appraisal list behind a full-page spinner.
+  const fetchPageData = async () => {
     try {
-      const data = await getAppraisalQuestions();
-      setQuestions(data);
+      setLoading(true);
+      setError(null);
+      const data = await listAppraisals();
+      setAppraisals(data.filter(a => a.type === 'SELF'));
+      const active = data.find(a => a.type === 'SELF' && a.status === 'IN_PROGRESS')
+        || data.find(a => a.type === 'SELF' && a.status === 'PENDING');
+      setCurrentAppraisal(active || null);
+      if (active?.status === 'IN_PROGRESS') {
+        getAppraisalResponses(active.id)
+          .then(setResponses)
+          .catch(err => {
+            console.error('Error fetching appraisal responses:', err);
+            setError('Failed to load saved answers. Please retry.');
+          });
+      }
     } catch (err) {
-      console.error('Error fetching questions:', err);
-      setError('Failed to load questions');
+      console.error('Error fetching appraisal page data:', err);
+      setError('Failed to load your appraisals. Please retry.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -128,9 +146,21 @@ const EmployeeAppraisal: React.FC = () => {
   // Save response
   const handleSaveResponse = async (questionId: string, rating: number, comment: string) => {
     if (!currentAppraisal) return;
-    
+    const previousResponses = responses;
+    const previous = previousResponses.find(r => r.questionId === questionId);
+    const optimistic: PerformanceAppraisalResponse = {
+      id: previous?.id || `pending-${questionId}`,
+      organizationId: currentAppraisal.organizationId,
+      appraisalId: currentAppraisal.id,
+      questionId,
+      employeeRating: rating,
+      employeeComment: comment || null,
+    };
+    // Show the selected rating immediately; persist it in the background.
+    setResponses(previous ? previousResponses.map(r => r.questionId === questionId ? optimistic : r) : [...previousResponses, optimistic]);
     try {
       setSubmitting(true);
+      setSuccess('Saving your answer…');
       const saved = await saveAppraisalResponse(currentAppraisal.id, questionId, rating, comment);
       
       // Update responses state
@@ -146,6 +176,8 @@ const EmployeeAppraisal: React.FC = () => {
       setSubmitting(false);
     } catch (err) {
       console.error('Error saving response:', err);
+      setResponses(previousResponses);
+      setSuccess(null);
       setError('Failed to save response');
       setSubmitting(false);
     }
@@ -163,32 +195,18 @@ const EmployeeAppraisal: React.FC = () => {
     return Math.round((answeredQuestions.length / questions.length) * 100);
   };
 
-  // Get all questions (show all 20 at once)
-  const getAllQuestions = () => {
-    return questions;
-  };
+  const activeQuestion = questions[activeQuestionIndex];
+  const isReadOnly = currentAppraisal?.status === 'COMPLETED' || currentAppraisal?.status === 'REVIEWED';
+  const answeredCount = responses.filter(r => r.employeeRating !== null && r.employeeRating !== undefined).length;
+  useEffect(() => {
+    setCommentDraft(activeQuestion ? (getResponse(activeQuestion.id)?.employeeComment || '') : '');
+  }, [activeQuestionIndex, responses, currentAppraisal?.id]);
 
   // Load data on component mount
   useEffect(() => {
-    fetchAppraisals();
-    fetchQuestions();
+    void fetchPageData();
+    void fetchQuestionList();
   }, []);
-
-  // Set current appraisal to the most recent in-progress one
-  useEffect(() => {
-    if (appraisals.length > 0) {
-      const inProgress = appraisals.find(a => a.status === 'IN_PROGRESS');
-      if (inProgress) {
-        setCurrentAppraisal(inProgress);
-        fetchResponses(inProgress.id);
-      } else {
-        const pending = appraisals.find(a => a.status === 'PENDING');
-        if (pending) {
-          setCurrentAppraisal(pending);
-        }
-      }
-    }
-  }, [appraisals]);
 
   return (
     <>
@@ -311,6 +329,49 @@ const EmployeeAppraisal: React.FC = () => {
               </div>
             </div>
 
+            {!currentAppraisal && (
+              <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden mb-6">
+                <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                  <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+                    Assessment Questions ({questions.length})
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    These questions appear in your appraisal. Create a self-appraisal above to rate and submit your answers.
+                  </p>
+                </div>
+                {questionsLoading ? (
+                  <div className="p-6 text-center text-gray-500 dark:text-gray-400">Loading questions…</div>
+                ) : questionsError ? (
+                  <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+                    <p>{questionsError}</p>
+                    <button type="button" onClick={() => void fetchQuestionList()} className="mt-3 text-blue-600 hover:underline dark:text-blue-400">
+                      Retry
+                    </button>
+                  </div>
+                ) : questions.length === 0 ? (
+                  <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+                    <p>No questions are available yet.</p>
+                    <button type="button" onClick={() => void fetchQuestionList()} className="mt-3 text-blue-600 hover:underline dark:text-blue-400">
+                      Reload questions
+                    </button>
+                  </div>
+                ) : (
+                  <ol className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {questions.map(question => (
+                      <li key={question.id} className="p-5">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">{question.order}. {question.title}</h4>
+                        {question.description && <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{question.description}</p>}
+                        {question.howToMeasure && <p className="mt-2 text-sm text-gray-600 dark:text-gray-300"><strong>How to measure:</strong> {question.howToMeasure}</p>}
+                        {question.ratingCriteria && <p className="mt-2 text-sm text-gray-600 dark:text-gray-300"><strong>Rating criteria:</strong> {question.ratingCriteria}</p>}
+                        {question.goodIndicator && <p className="mt-2 text-sm text-green-700 dark:text-green-300">{question.goodIndicator}</p>}
+                        {question.redFlag && <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">{question.redFlag}</p>}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+            )}
+
             {/* Current Appraisal Form */}
             {currentAppraisal && (
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
@@ -323,77 +384,88 @@ const EmployeeAppraisal: React.FC = () => {
                 </div>
 
                 <div className="p-4">
-                  {questions.length === 0 ? (
+                  {questionsLoading ? (
                     <div className="text-center py-6 text-gray-500 dark:text-gray-400">
                       <ArrowPathIcon className="w-12 h-12 mx-auto mb-4 text-gray-400 animate-spin" />
                       <p>Loading questions...</p>
                     </div>
+                  ) : questionsError ? (
+                    <div className="text-center py-6 text-gray-500 dark:text-gray-400">
+                      <p>{questionsError}</p>
+                      <button type="button" onClick={() => void fetchQuestionList()} className="mt-3 text-blue-600 hover:underline dark:text-blue-400">
+                        Retry
+                      </button>
+                    </div>
+                  ) : questions.length === 0 ? (
+                    <div className="text-center py-6 text-gray-500 dark:text-gray-400">No appraisal questions are configured. Contact HR.</div>
                   ) : (
                     <div className="space-y-8">
-                      {getAllQuestions().map((question) => {
+                      {currentAppraisal.status === 'PENDING' ? (
+                        <div className="text-center py-8">
+                          <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Ready when you are</h4>
+                          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Start your appraisal to save your answers as you go.</p>
+                          <button onClick={() => handleStartAppraisal(currentAppraisal)} disabled={submitting} className="mt-5 rounded-lg bg-blue-600 px-5 py-2.5 font-medium text-white hover:bg-blue-700 disabled:opacity-50">Start appraisal</button>
+                        </div>
+                      ) : activeQuestion ? (() => {
+                        const question = activeQuestion;
                         const response = getResponse(question.id);
-                        const isReadOnly = currentAppraisal.status === 'COMPLETED' || currentAppraisal.status === 'REVIEWED';
-
-                        return (
-                          <div key={question.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-6 bg-white dark:bg-gray-800 shadow-sm">
-                            <h4 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                              {question.order}. {question.title}
-                            </h4>
+                        return <div className="mx-auto max-w-3xl">
+                          <div className="mb-5 flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
+                            <span>Question {activeQuestionIndex + 1} of {questions.length}</span>
+                            <span>{answeredCount} answered · {calculateCompletion()}% complete</span>
+                          </div>
+                          <div className="mb-5 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700"><div className="h-full bg-blue-600 transition-all" style={{ width: `${calculateCompletion()}%` }} /></div>
+                          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                            <h4 className="text-xl font-semibold text-gray-900 dark:text-white">{question.title}</h4>
 
                             <div className="space-y-4 mb-6">
+                              {question.description && (
+                                <p className="text-sm text-gray-600 dark:text-gray-300">{question.description}</p>
+                              )}
                               <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                                 <h5 className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">How to Measure:</h5>
                                 <p className="text-sm text-blue-700 dark:text-blue-400">{question.howToMeasure}</p>
                               </div>
+                              {question.ratingCriteria && <p className="text-sm text-gray-600 dark:text-gray-300"><strong>Rating criteria:</strong> {question.ratingCriteria}</p>}
+                              {question.goodIndicator && <p className="text-sm text-green-700 dark:text-green-300">{question.goodIndicator}</p>}
+                              {question.redFlag && <p className="text-sm text-amber-700 dark:text-amber-300">{question.redFlag}</p>}
                             </div>
 
                             <div className="mb-6">
                               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                                 Your Rating (1-5)
                               </label>
-                              <div className="flex space-x-3">
+                              <div className="grid grid-cols-5 gap-3">
                                 {[1, 2, 3, 4, 5].map((rating) => (
                                   <button
                                     key={rating}
                                     type="button"
                                     disabled={isReadOnly || submitting}
-                                    onClick={() => {
-                                      if (!isReadOnly && !submitting) {
-                                        handleSaveResponse(
-                                          question.id,
-                                          rating,
-                                          '' // No comments needed
-                                        );
-                                      }
-                                    }}
-                                    className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
+                                    onClick={() => { if (!isReadOnly && !submitting) void handleSaveResponse(question.id, rating, commentDraft); }}
+                                    className={`min-h-16 rounded-lg flex flex-col items-center justify-center text-sm font-semibold transition-all ${
                                       response?.employeeRating === rating
                                         ? 'bg-blue-600 text-white shadow-lg transform scale-110'
                                         : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 hover:shadow-md'
                                     } ${isReadOnly ? 'cursor-not-allowed opacity-70' : 'hover:scale-105'}`}
                                   >
-                                    {rating}
+                                    <>{rating}<span className="text-[10px] font-normal">{['Needs support','Developing','Effective','Strong','Exceptional'][rating - 1]}</span></>
                                   </button>
                                 ))}
                               </div>
                             </div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Your reflection <span className="font-normal text-gray-500">(optional)</span>
+                              <textarea value={commentDraft} onChange={e => setCommentDraft(e.target.value)} onBlur={() => { if (response?.employeeRating && !isReadOnly) void handleSaveResponse(question.id, response.employeeRating, commentDraft); }} disabled={isReadOnly || submitting} maxLength={2000} rows={3} placeholder="Add an example or context for your rating…" className="mt-2 w-full rounded-lg border border-gray-300 bg-white p-3 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white disabled:opacity-70" />
+                            </label>
+                            <div className="mt-6 flex justify-between">
+                              <button type="button" onClick={() => setActiveQuestionIndex(i => Math.max(0, i - 1))} disabled={activeQuestionIndex === 0} className="rounded-lg border px-4 py-2 text-sm disabled:opacity-40 dark:border-gray-600 dark:text-white">Previous</button>
+                              {activeQuestionIndex < questions.length - 1 ? <button type="button" onClick={() => setActiveQuestionIndex(i => i + 1)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">Next question</button> : null}
+                            </div>
                           </div>
-                        );
-                      })}
+                          <nav aria-label="Appraisal questions" className="mt-4 flex flex-wrap gap-2">{questions.map((q, index) => <button key={q.id} type="button" aria-label={`Go to question ${index + 1}`} onClick={() => setActiveQuestionIndex(index)} className={`h-9 w-9 rounded-full text-xs font-medium ${index === activeQuestionIndex ? 'bg-blue-600 text-white' : getResponse(q.id)?.employeeRating ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>{index + 1}</button>)}</nav>
+                          {!isReadOnly && <div className="mt-6 text-center"><button onClick={handleCompleteAppraisal} disabled={submitting || calculateCompletion() < 100} className="rounded-lg bg-green-600 px-6 py-3 font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"><CheckCircleIcon className="mr-2 inline h-5 w-5" />Submit appraisal</button>{calculateCompletion() < 100 && <p className="mt-2 text-xs text-gray-500">Answer all {questions.length} questions to submit.</p>}</div>}
+                        </div>;
+                      })() : null}
 
-                      {/* Submit Button at the bottom */}
-                      {currentAppraisal && (
-                        <div className="mt-8 flex justify-center">
-                          <button
-                            onClick={handleCompleteAppraisal}
-                            disabled={submitting || calculateCompletion() < 100}
-                            className="flex items-center gap-3 px-8 py-4 text-lg font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all"
-                          >
-                            <CheckCircleIcon className="w-6 h-6" />
-                            Submit Performance Appraisal
-                          </button>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>

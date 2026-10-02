@@ -4,7 +4,7 @@ import {
   InfoIcon
 } from "../../../icons";
 
-import { listEmployeeJobAssignments, listUsers, getJobs, type UserSummary, type Job } from "../../../api/services";
+import { listEmployeeJobAssignments } from "../../../api/services";
 
 // Format date for display
 const formatDate = (dateString: string) => {
@@ -29,8 +29,6 @@ type JobAssignmentRow = {
 export default function EmployeeJobAssignment() {
   // Backend-driven state
   const [assignments, setAssignments] = useState<JobAssignmentRow[]>([]);
-  const [users, setUsers] = useState<UserSummary[]>([]);
-  const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -44,22 +42,16 @@ export default function EmployeeJobAssignment() {
       setLoading(true);
       setError(null);
 
-      const [assignRecs, userRecs, jobRecs] = await Promise.all([
-        listEmployeeJobAssignments(),
-        listUsers(),
-        getJobs(),
-      ]);
-
-      const userById = new Map(userRecs.map(u => [u.id, u]));
-      const jobById = new Map(jobRecs.map(j => [j.id, j]));
+      const assignRecs = await listEmployeeJobAssignments();
 
       const rows: JobAssignmentRow[] = assignRecs.map(rec => {
-        const user = userById.get(rec.employeeId);
-        const job = jobById.get(rec.jobId);
+        const employeeName = rec.employee
+          ? `${rec.employee.firstName ?? ''} ${rec.employee.lastName ?? ''}`.trim() || rec.employee.email
+          : rec.employeeId;
         return {
           id: rec.id,
-          employeeName: user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email : rec.employeeId,
-          jobTitle: job ? job.title : rec.jobId,
+          employeeName,
+          jobTitle: rec.job?.title ?? rec.jobId,
           startDateRaw: rec.startDate,
           employeeId: rec.employeeId,
           jobId: rec.jobId,
@@ -67,8 +59,6 @@ export default function EmployeeJobAssignment() {
       });
 
       setAssignments(rows);
-      setUsers(userRecs);
-      setJobs(jobRecs);
     } catch (err) {
       console.error("Error fetching assignments:", err);
       setError('Failed to load job assignments. Please try again later.');
@@ -153,12 +143,6 @@ export default function EmployeeJobAssignment() {
                     <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Start Date</h4>
                     <p className="text-sm text-gray-900 dark:text-white">{assignment.startDateRaw ? new Date(assignment.startDateRaw).toLocaleDateString() : '—'}</p>
                   </div>
-                  {assignment.employeeId && (
-                    <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
-                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Employee ID</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">{assignment.employeeId}</p>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

@@ -44,57 +44,48 @@ export default function PricingPage() {
   ];
 
   return (
-    <div className="bg-gray-50 dark:bg-gray-900 py-16">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
-            Simple, Transparent Pricing
-          </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300">
-            Choose the perfect plan for your organization's needs
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+    <div className="bg-slate-50 py-12 dark:bg-gray-950 sm:py-16">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-3 md:gap-6">
           {plans.map((plan) => (
             <div 
               key={plan.name} 
-              className={`relative rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl hover:scale-105 ${
+              className={`relative overflow-hidden rounded-3xl border shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl ${
                 plan.popular 
-                  ? "ring-2 ring-blue-500 dark:ring-blue-400 transform md:-translate-y-4 bg-gradient-to-b from-white to-blue-50 dark:from-gray-800 dark:to-gray-700" 
-                  : "bg-white dark:bg-gray-800"
+                  ? "border-indigo-300 bg-gradient-to-b from-white to-indigo-50 ring-2 ring-indigo-500/70 dark:border-indigo-800 dark:from-gray-900 dark:to-indigo-950/40 md:-translate-y-2" 
+                  : "border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900"
               }`}
             >
               {plan.popular && (
-                <div className="absolute top-5 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-full text-xs font-bold tracking-wide shadow-lg animate-pulse z-10">
+                <div className="absolute right-5 top-5 rounded-full bg-indigo-600 px-3.5 py-1.5 text-[10px] font-bold tracking-wider text-white shadow-sm">
                   MOST POPULAR
                 </div>
               )}
-              <div className="p-8 pt-12">
-                <div className="flex items-center mb-6">
-                  <div className="mr-4 transform hover:scale-110 transition-transform duration-300">{plan.icon}</div>
+              <div className="p-6 pt-8 sm:p-8">
+                <div className="mb-7 flex items-center">
+                  <div className="mr-4 flex size-12 items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-950">{plan.icon}</div>
                   <div>
-                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{plan.name}</h3>
-                    <p className="text-gray-600 dark:text-gray-300">{plan.desc}</p>
+                    <h3 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-white">{plan.name}</h3>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-gray-300">{plan.desc}</p>
                   </div>
                 </div>
-                <div className="mb-8">
-                  <p className="text-5xl font-bold text-gray-900 dark:text-white mb-2">{plan.price}</p>
+                <div className="mb-7 border-b border-slate-100 pb-6 dark:border-gray-800">
+                  <p className="mb-2 text-4xl font-semibold tracking-tight text-slate-900 dark:text-white">{plan.price}</p>
                   {plan.price !== "Custom" && <p className="text-gray-500 dark:text-gray-400">per month</p>}
                 </div>
-                <ul className="space-y-4 mb-8">
+                <ul className="mb-8 space-y-4">
                   {plan.features.map((feature) => (
                     <li key={feature} className="flex items-start group">
-                      <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2 mt-0.5 flex-shrink-0 transform group-hover:scale-110 transition-transform duration-300" />
-                      <span className="text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors duration-300">{feature}</span>
+                      <CheckCircleIcon className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-500 transition-transform group-hover:scale-110" />
+                      <span className="text-slate-600 transition-colors group-hover:text-slate-900 dark:text-gray-300 dark:group-hover:text-white">{feature}</span>
                     </li>
                   ))}
                 </ul>
                 <button
-                  className={`w-full py-3 px-6 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 ${
+                  className={`w-full rounded-xl px-6 py-3.5 font-semibold transition ${
                     plan.popular
-                      ? "bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl"
-                      : "bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white"
+                      ? "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700"
+                      : "border border-slate-200 bg-white text-slate-800 hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
                   }`}
                 >
                   Get Started
@@ -104,11 +95,11 @@ export default function PricingPage() {
           ))}
         </div>
 
-        <div className="mt-20 bg-white dark:bg-gray-800 rounded-2xl p-10">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 text-center">
+        <div className="mt-14 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:mt-16 sm:p-10">
+          <h2 className="mb-8 text-center text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
             HR Management FAQs
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
             <FAQItem 
               question="How does employee onboarding work in your system?" 
               answer="Our platform provides automated onboarding workflows with document signing, task assignments, and training tracking to streamline new hire processes." 
@@ -142,9 +133,9 @@ export default function PricingPage() {
 
 function FAQItem({ question, answer }: { question: string, answer: string }) {
   return (
-    <div className="border-b border-gray-200 dark:border-gray-700 pb-6 transition-all duration-300 hover:bg-gray-50 dark:hover:bg-gray-700 p-4 rounded-lg">
-      <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400">{question}</h3>
-      <p className="text-gray-600 dark:text-gray-400">{answer}</p>
+    <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-5 transition hover:border-indigo-100 hover:bg-indigo-50/50 dark:border-gray-800 dark:bg-gray-800/50 dark:hover:bg-gray-800">
+      <h3 className="mb-2 text-base font-semibold text-slate-900 dark:text-white">{question}</h3>
+      <p className="text-sm leading-6 text-slate-600 dark:text-gray-400">{answer}</p>
     </div>
   );
 }

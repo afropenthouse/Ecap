@@ -15,7 +15,8 @@ import { UserIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import {
   getAssessments,
   getCompetencies,
-  type Assessment
+  getMyJobAssignment,
+  listAssessorAssignments,
 } from "../../../api/services";
 
 // Register ChartJS components
@@ -66,80 +67,6 @@ interface EmployeeAssessment {
   assessor_status?: string;
 }
 
-// Mock data for demonstration
-const mockCompetencies: Competency[] = [
-  { id: '1', name: 'Communication' },
-  { id: '2', name: 'Problem Solving' },
-  { id: '3', name: 'Leadership' },
-  { id: '4', name: 'Technical Skills' },
-  { id: '5', name: 'Teamwork' }
-];
-
-const mockAssessments: EmployeeAssessment[] = [
-  {
-    id: '1',
-    employee_id: 'user123',
-    employee_name: 'john.doe@company.com',
-    employee_full_name: 'John Doe',
-    employee_email: 'john.doe@company.com',
-    department_id: '1',
-    department_name: 'Engineering',
-    job_role_id: '1',
-    job_role_name: 'Software Engineer',
-    start_date: '2024-01-15T00:00:00Z',
-    last_updated: '2024-03-20T00:00:00Z',
-    status: 'reviewed',
-    progress: 100,
-    assessor_status: 'reviewed',
-    assessor_id: 'assessor1',
-    assessor_name: 'Jane Smith',
-    assessor_rating: 4.2,
-    assessor_comments: 'Strong overall performance with good technical skills',
-    competency_ratings: [
-      {
-        id: '1',
-        competency_id: '1',
-        rating: 4,
-        comments: 'Good communication skills',
-        assessor_comments: 'Excellent communication with team members',
-        assessor_rating: 5
-      },
-      {
-        id: '2',
-        competency_id: '2',
-        rating: 3,
-        comments: 'Working on problem-solving skills',
-        assessor_comments: 'Shows improvement in problem-solving',
-        assessor_rating: 3
-      },
-      {
-        id: '3',
-        competency_id: '3',
-        rating: 2,
-        comments: 'Limited leadership experience',
-        assessor_comments: 'Developing leadership potential',
-        assessor_rating: 3
-      },
-      {
-        id: '4',
-        competency_id: '4',
-        rating: 5,
-        comments: 'Strong technical background',
-        assessor_comments: 'Excellent technical skills',
-        assessor_rating: 5
-      },
-      {
-        id: '5',
-        competency_id: '5',
-        rating: 4,
-        comments: 'Good team player',
-        assessor_comments: 'Collaborates well with team',
-        assessor_rating: 4
-      }
-    ]
-  }
-];
-
 // Helper functions
 const formatDate = (dateString: string) => {
   if (!dateString) return 'N/A';
@@ -171,9 +98,11 @@ function IndividualGap() {
         setError(null);
 
         // Fetch all necessary data
-        const [allAssessments, comps] = await Promise.all([
+        const [allAssessments, comps, jobAssignment, assessorAssignments] = await Promise.all([
           getAssessments(),
-          getCompetencies()
+          getCompetencies(),
+          getMyJobAssignment(),
+          listAssessorAssignments({ employeeId: user.id })
         ]);
 
         // Get self assessment and corresponding assessor assessment
@@ -221,7 +150,7 @@ function IndividualGap() {
             }
           });
 
-          const compRatings = Object.values(byComp);
+        const compRatings = Object.values(byComp).filter(rating => rating.rating > 0 && rating.assessor_rating > 0);
           const ratedCompetencies = compRatings.filter(r => r.assessor_rating > 0);
           const overallRating = ratedCompetencies.length > 0
             ? ratedCompetencies.reduce((sum, r) => sum + r.assessor_rating, 0) / ratedCompetencies.length
@@ -233,24 +162,34 @@ function IndividualGap() {
             employee_name: user.email || '',
             employee_email: user.email,
             employee_full_name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-            department_id: '',
-            department_name: '',
-            job_role_id: '',
-            job_role_name: '',
+            department_id: jobAssignment?.job?.department?.id || '',
+            department_name: jobAssignment?.job?.department?.name || '',
+            job_role_id: jobAssignment?.jobId || '',
+            job_role_name: jobAssignment?.job?.title || '',
             start_date: selfAssessment.createdAt,
             last_updated: assessorAssessment.completedAt || assessorAssessment.createdAt,
             status: 'reviewed',
             progress: 100,
             competency_ratings: compRatings,
             assessor_id: assessorAssessment.assessorId || undefined,
-            assessor_name: '',
+            assessor_name: (() => {
+              const assignedAssessor = assessorAssignments.find(assignment => assignment.assessorId === assessorAssessment.assessorId)?.assessor;
+              return assignedAssessor
+                ? `${assignedAssessor.firstName || ''} ${assignedAssessor.lastName || ''}`.trim() || assignedAssessor.email
+                : '';
+            })(),
             assessor_rating: overallRating,
             assessor_comments: '',
             assessor_status: 'reviewed',
           };
 
-          setAssessments([employeeAssessment]);
-          setSelectedAssessment(employeeAssessment);
+          if (compRatings.length > 0) {
+            setAssessments([employeeAssessment]);
+            setSelectedAssessment(employeeAssessment);
+          } else {
+            setAssessments([]);
+            setSelectedAssessment(null);
+          }
         } else {
           setAssessments([]);
           setSelectedAssessment(null);
