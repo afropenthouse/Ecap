@@ -1,3 +1,4 @@
+import PasswordInput from '../../components/form/input/PasswordInput';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
@@ -27,8 +28,8 @@ export default function AcceptInvite() {
     <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Set a password to activate your HRM Office account.</p>
     {error && <p role="alert" className="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     <form className="mt-6 space-y-4" onSubmit={submit}>
-      <input required minLength={8} type="password" autoComplete="new-password" placeholder="Password (at least 8 characters)" value={password} onChange={e => setPassword(e.target.value)} className="w-full rounded border p-3 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
-      <input required minLength={8} type="password" autoComplete="new-password" placeholder="Confirm password" value={confirm} onChange={e => setConfirm(e.target.value)} className="w-full rounded border p-3 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+      <PasswordInput aria-label="Password" required minLength={8} autoComplete="new-password" placeholder="Password (at least 8 characters)" value={password} onChange={e => setPassword(e.target.value)} className="w-full rounded border p-3 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+      <PasswordInput aria-label="Confirm password" passwordLabel="confirm password" required minLength={8} autoComplete="new-password" placeholder="Confirm password" value={confirm} onChange={e => setConfirm(e.target.value)} className="w-full rounded border p-3 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
       <button disabled={busy || !token} className="w-full rounded bg-blue-600 p-3 font-medium text-white disabled:opacity-50">{busy ? 'Accepting invitation…' : 'Set password and join'}</button>
     </form>
     <Link className="mt-4 block text-sm text-blue-600" to="/auth/login">Back to sign in</Link>

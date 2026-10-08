@@ -1,4 +1,5 @@
-﻿import { useState } from "react";
+﻿import PasswordInput from '../../components/form/input/PasswordInput';
+import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ThemeToggleButton } from "../../components/common/ThemeToggleButton";
 import { useAuth } from "../../context/AuthContext";
@@ -160,13 +161,12 @@ export default function Login() {
               <label htmlFor="password" className="sr-only">
                 Password
               </label>
-              <input
+              <PasswordInput
                 id="password"
                 name="password"
-                type="password"
                 autoComplete="current-password"
                 required
-                className="appearance-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-white rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm dark:bg-gray-800 mb-4"
+                className="appearance-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-white rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm dark:bg-gray-800"
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
