@@ -168,6 +168,7 @@ router.put('/:id/departments', authMiddleware, async (req: Request, res: Respons
     // Validate incoming departments belong to org
     const validDeps = await prisma.department.findMany({ where: { id: { in: departmentIds }, organizationId: req.user!.organizationId } });
     const newDepIds = new Set(validDeps.map((d) => d.id));
+    if (newDepIds.size !== new Set(departmentIds).size) return res.status(400).json({ error: 'Choose departments in your organisation.' });
 
     // Get current assignments and their departments
     const currentAssignments = await prisma.employeeJobAssignment.findMany({
@@ -175,6 +176,16 @@ router.put('/:id/departments', authMiddleware, async (req: Request, res: Respons
       include: { job: true },
     });
     const currentDepIds = new Set(currentAssignments.map((a) => a.job.departmentId).filter((x): x is string => !!x));
+
+    // Department selection must not invent a role or silently choose between roles.
+    const jobsForNewDepartments = await prisma.job.findMany({
+      where: { organizationId: req.user!.organizationId, departmentId: { in: [...newDepIds].filter(depId => !currentDepIds.has(depId)) }, OR: [{ title: { not: 'General' } }, { description: null }, { description: { not: 'Auto-created for department assignment' } }] },
+    });
+    for (const depId of newDepIds) {
+      if (!currentDepIds.has(depId) && jobsForNewDepartments.filter(job => job.departmentId === depId).length !== 1) {
+        return res.status(409).json({ error: 'HR must create and assign a specific job role for this department using Assign Job Roles. Generic roles are no longer created automatically.' });
+      }
+    }
 
     // Remove assignments for departments not in new set
     for (const a of currentAssignments) {
@@ -187,17 +198,7 @@ router.put('/:id/departments', authMiddleware, async (req: Request, res: Respons
     // Add assignments for new departments (one per department)
     for (const depId of newDepIds) {
       if (!currentDepIds.has(depId)) {
-        let job = await prisma.job.findFirst({ where: { organizationId: req.user!.organizationId, departmentId: depId } });
-        if (!job) {
-          job = await prisma.job.create({
-            data: {
-              organizationId: req.user!.organizationId,
-              departmentId: depId,
-              title: 'General',
-              description: 'Auto-created for department assignment',
-            },
-          });
-        }
+        const job = jobsForNewDepartments.find(job => job.departmentId === depId)!;
         await prisma.employeeJobAssignment.create({
           data: {
             organizationId: req.user!.organizationId,

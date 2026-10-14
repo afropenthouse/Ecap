@@ -5,6 +5,8 @@ import {
   ChevronDownIcon,
 } from "../../../icons";
 import { getJobs, getDepartments, createJob, updateJob, deleteJob, type Job as ServiceJob, type Department as ServiceDepartment } from '../../../api/services';
+import { removeGeneratedJobs } from '../../../api/services';
+import { useAuth } from '../../../context/AuthContext';
 
 interface Job extends ServiceJob {
   requirements?: any[];
@@ -14,10 +16,14 @@ interface Department extends ServiceDepartment {
 }
 
 export default function Job() {
+  const { user } = useAuth();
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanupMessage, setCleanupMessage] = useState('');
   const [jobs, setJobs] = useState<Job[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -57,7 +63,7 @@ export default function Job() {
     try {
       setLoading(true);
       setError(null);
-      const jobsData = await getJobs();
+      const jobsData = await getJobs({ includeGenerated: user?.roles.includes('hr') });
       setJobs(Array.isArray(jobsData) ? jobsData : []);
     } catch (err) {
       console.error('Error fetching jobs:', err);
@@ -78,16 +84,18 @@ export default function Job() {
   };
 
   // Filter jobs based on search term
-  const filteredJobs = jobs.filter(job => 
+  const filteredJobs = jobs.filter(job => !(job.title === 'General' && job.description === 'Auto-created for department assignment') && (
     (job.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (job.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     ((job.department?.name || '').toLowerCase().includes(searchTerm.toLowerCase()))
+    )
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAdding || isUpdating) return;
     try {
-      setError(null);
+      setFormError(null);
       if (selectedJob) {
         setIsUpdating(true);
         await updateJob(selectedJob.id, {
@@ -111,7 +119,7 @@ export default function Job() {
       setFormData({ title: '', description: '', departmentId: '' });
     } catch (err: any) {
       console.error('Error saving job:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save job. Please try again later.');
+      setFormError(err instanceof Error ? err.message : 'Failed to save job. Please try again later.');
     } finally {
       setIsAdding(false);
       setIsUpdating(false);
@@ -119,6 +127,7 @@ export default function Job() {
   };
 
   const handleEdit = (job: Job) => {
+    setFormError(null);
     setSelectedJob(job);
     setFormData({
       title: job.title,
@@ -133,6 +142,7 @@ export default function Job() {
     if (!selectedJob) return;
     
     try {
+      setFormError(null);
       setIsDeleting(true);
       await deleteJob(selectedJob.id);
       await fetchJobs();
@@ -140,7 +150,7 @@ export default function Job() {
       setSelectedJob(null);
     } catch (err: any) {
       console.error('Error deleting job:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete job. Please try again later.');
+      setFormError(err instanceof Error ? err.message : 'Failed to delete job. Please try again later.');
     } finally {
       setIsDeleting(false);
     }
@@ -154,6 +164,17 @@ export default function Job() {
     }
   };
 
+  const generatedJobs = jobs.filter(job => job.title === 'General' && job.description === 'Auto-created for department assignment');
+  const cleanup = async () => {
+    setCleaning(true); setError(null);
+    try {
+      const result = await removeGeneratedJobs();
+      setCleanupMessage(`Removed ${result.jobsRemoved} generated jobs and ${result.assignmentsRemoved} placeholder assignments. Assign real job roles to affected employees.`);
+      await fetchJobs();
+    } catch (err) { setError(err instanceof Error ? err.message : 'Failed to remove generated jobs.'); }
+    finally { setCleaning(false); }
+  };
+
   return (
     <div className="h-full overflow-auto p-6">
       {/* Header Section */}
@@ -163,7 +184,7 @@ export default function Job() {
           <p className="mt-1 text-gray-600 dark:text-gray-400">Manage job profiles and their details</p>
         </div>
         <button 
-          onClick={() => setShowAddModal(true)}
+          onClick={() => { setFormError(null); setSelectedJob(null); setFormData({ title: "", description: "", departmentId: "" }); setShowAddModal(true); }}
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
         >
           Add Job
@@ -171,6 +192,11 @@ export default function Job() {
       </div>
 
       {/* Search Bar */}
+      {user?.roles.includes('hr') && generatedJobs.length > 0 && <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <p>{generatedJobs.length} generic jobs were generated by the old department assignment workflow. Removing them also clears their placeholder employee assignments and competency requirements.</p>
+        <button onClick={cleanup} disabled={cleaning} className="mt-3 rounded-lg bg-amber-700 px-4 py-2 font-medium text-white disabled:opacity-50">{cleaning ? 'Removing…' : 'Remove generated General jobs'}</button>
+      </div>}
+      {cleanupMessage && <p role="status" className="mb-4 rounded-lg bg-green-50 p-4 text-sm text-green-800">{cleanupMessage}</p>}
       <div className="mb-6 relative">
         <input
           type="text"
@@ -302,6 +328,7 @@ export default function Job() {
           <div className="w-full max-w-2xl rounded-xl bg-white p-5 dark:bg-gray-900">
             <h2 className="text-xl font-bold text-center text-gray-900 dark:text-white">Add New Job</h2>
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              {formError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{formError}</p>}
               <div>
                 <label htmlFor="title" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Job Title
@@ -382,6 +409,7 @@ export default function Job() {
           <div className="w-full max-w-2xl rounded-xl bg-white p-5 dark:bg-gray-900">
             <h2 className="text-xl font-bold text-center text-gray-900 dark:text-white">Edit Job</h2>
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              {formError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{formError}</p>}
               <div>
                 <label htmlFor="edit_title" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Job Title
@@ -465,6 +493,7 @@ export default function Job() {
               Are you sure you want to delete this job profile?
             </p>
             
+            {formError && <p role="alert" className="mt-4 text-sm text-red-600 dark:text-red-400">{formError}</p>}
             <div className="mt-6 flex items-center justify-end gap-3">
               <button
                 onClick={() => setShowDeleteModal(false)}

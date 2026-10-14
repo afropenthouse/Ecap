@@ -14,6 +14,8 @@ import assignmentsRouter from './routes/assignments';
 import jobAssignmentsRouter from './routes/employeeJobAssignments';
 import employeesRouter from './routes/employees';
 import appraisalsRouter from './routes/appraisals';
+import talentRouter from './routes/talent';
+import helpRouter from './routes/help';
 import { isPostmarkConfigured, verifyPostmark } from './utils/email';
 
 const app = express();
@@ -75,6 +77,8 @@ app.use('/api/competencies', compRouter);
 app.use('/api/assessments', assessRouter);
 app.use('/api/appraisals', appraisalsRouter);
 app.use('/api/analytics', analyticsRouter);
+app.use('/api/talent', talentRouter);
+app.use('/api/help', helpRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/assignments', assignmentsRouter);
 app.use('/api/job-assignments', jobAssignmentsRouter);

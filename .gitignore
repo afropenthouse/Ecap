@@ -29,6 +29,7 @@
 # Local database files and uploaded files
 backend/prisma/*.db
 backend/prisma/*.db-journal
+backend/backups/
 *.sqlite
 *.sqlite3
 backend/uploads/*

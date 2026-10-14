@@ -17,6 +17,7 @@ type AuthContextType = {
   isInitializing: boolean;
   organization: Organization | null;
   updateOrganization: (organization: Organization) => void;
+  updateProfile: (names: { firstName: string; lastName: string }) => Promise<void>;
   signIn: (email: string, password: string, organizationId?: string) => Promise<User>;
   signUp: (params: { organizationName: string; organizationEmail: string; adminEmail: string; adminPassword: string; firstName?: string; lastName?: string }) => Promise<void>;
   signOut: () => Promise<void>;
@@ -97,6 +98,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Do not auto-login here; let UI redirect to login/setup
   };
 
+  const updateProfile = async (names: { firstName: string; lastName: string }) => {
+    const saved = await api.put<{ firstName: string; lastName: string }>('/auth/me', names);
+    setUser(previous => previous ? { ...previous, firstName: saved.firstName, lastName: saved.lastName } : previous);
+  };
+
   const signOut = async () => {
     setToken(undefined);
     setUser(null);
@@ -109,7 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isInitializing, organization, updateOrganization: setOrganization, signIn, signUp, signOut, resetPassword }}>
+    <AuthContext.Provider value={{ user, isInitializing, organization, updateOrganization: setOrganization, updateProfile, signIn, signUp, signOut, resetPassword }}>
       {children}
     </AuthContext.Provider>
   );

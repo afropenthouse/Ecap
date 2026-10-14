@@ -1,3 +1,4 @@
+import { matchingSelf, currentAssignment, agreementPercentage as calculateAgreement } from '../../../utils/gapEvidence';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import {
@@ -16,6 +17,7 @@ import {
   getAssessments,
   listUsers,
   getCompetencies,
+  getProficiencyLevels,
   getEmployeeJobAssignments,
   getDepartments,
   getJobs,
@@ -85,6 +87,7 @@ const formatDate = (dateString: string) => {
 
 function IndividualGap() {
   const { user } = useAuth();
+  const [maxLevel, setMaxLevel] = useState(5);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [assessments, setAssessments] = useState<EmployeeAssessment[]>([]);
@@ -103,24 +106,21 @@ function IndividualGap() {
         setError(null);
 
         // Fetch all necessary data in parallel
-        const [allAssessments, users, comps, jobAssigns, depts, jobsData] = await Promise.all([
+        const [allAssessments, users, comps, jobAssigns, depts, jobsData, levels] = await Promise.all([
           getAssessments(),
           listUsers(),
           getCompetencies(),
           getEmployeeJobAssignments(),
           getDepartments(),
-          getJobs()
+          getJobs(),
+          getProficiencyLevels()
         ]);
+        setMaxLevel(Math.max(1, ...levels.map(level => level.levelNumber), ...(levels.length ? [] : [5])));
 
         // Build lookup maps
         const userById: Record<string, UserSummary> = {};
         (users || []).forEach(u => {
           userById[u.id] = u;
-        });
-
-        const jobAssignmentByEmployee: Record<string, any> = {};
-        (jobAssigns || []).forEach(ja => {
-          jobAssignmentByEmployee[ja.employeeId] = ja;
         });
 
         const jobById: Record<string, any> = {};
@@ -133,15 +133,6 @@ function IndividualGap() {
           departmentById[dept.id] = dept;
         });
 
-        // Get self assessments
-        const selfAssessments = (allAssessments || []).filter(a => a.type === 'SELF' && a.status === 'COMPLETED');
-        const selfByEmployee: Record<string, Assessment> = {};
-        selfAssessments.forEach(a => {
-          if (!selfByEmployee[a.employeeId]) {
-            selfByEmployee[a.employeeId] = a;
-          }
-        });
-
         // Get assessor assessments
         const assessorAssessments = (allAssessments || []).filter(
           a => a.type === 'ASSESSOR' && a.status === 'REVIEWED' && a.assessorId === user.id
@@ -150,8 +141,8 @@ function IndividualGap() {
         // Process assessments into format needed for UI
         const processedResults: (EmployeeAssessment | null)[] = assessorAssessments.map(assessorAssessment => {
           const employee = userById[assessorAssessment.employeeId];
-          const selfAssessment = selfByEmployee[assessorAssessment.employeeId];
-          const jobAssignment = jobAssignmentByEmployee[assessorAssessment.employeeId];
+          const selfAssessment = matchingSelf(allAssessments || [], assessorAssessment);
+          const jobAssignment = currentAssignment(jobAssigns || [], assessorAssessment.employeeId);
           const job = jobAssignment ? jobById[jobAssignment.jobId] : null;
           const department = job ? departmentById[job.departmentId] : null;
 
@@ -315,21 +306,8 @@ function IndividualGap() {
   const getPieChartData = () => {
     if (!selectedAssessment) return null;
 
-    // Calculate average ratings
-    const employeeRatings = selectedAssessment.competency_ratings.map(r => r.rating);
-    const avgEmployeeRating = employeeRatings.reduce((sum, r) => sum + r, 0) / employeeRatings.length;
-
-    const assessorRatings = selectedAssessment.competency_ratings.map(r => r.assessor_rating || 0).filter(r => r > 0);
-    const avgAssessorRating = assessorRatings.length > 0
-      ? assessorRatings.reduce((sum, r) => sum + r, 0) / assessorRatings.length
-      : 0;
-
-    // Calculate gap
-    const gap = Math.abs(avgAssessorRating - avgEmployeeRating);
-
-    // Calculate agreement percentage (inverse of gap)
-    const maxPossibleGap = 4; // Maximum possible gap is 4 (between 1 and 5)
-    const agreementPercentage = 100 - (gap / maxPossibleGap * 100);
+    const agreementPercentage = calculateAgreement(selectedAssessment.competency_ratings.flatMap(rating =>
+      rating.assessor_rating != null ? [[rating.rating, rating.assessor_rating] as [number, number]] : []), Math.max(1, maxLevel - 1));
 
     return {
       labels: ['Agreement', 'Gap'],
@@ -609,6 +587,7 @@ function IndividualGap() {
       avgEmployeeRating: avgEmployeeRating.toFixed(1),
       avgAssessorRating: avgAssessorRating.toFixed(1),
       avgGap: avgGap.toFixed(1),
+      meanAbsoluteGap: gaps.reduce((sum, gap) => sum + Math.abs(gap), 0) / gaps.length,
       largestGap,
       largestGapCompetency: competencyName,
       isOverestimating: avgGap < 0
@@ -783,7 +762,7 @@ function IndividualGap() {
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
-                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Employee Self-Perception</h3>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Rating pattern</h3>
                   <div className="flex items-center">
                     <div className={`rounded-full p-2 mr-3 ${
                       parseFloat(stats.avgGap) > 0.5
@@ -810,10 +789,10 @@ function IndividualGap() {
                     <div>
                       <p className="text-sm font-medium text-gray-900 dark:text-white">
                         {parseFloat(stats.avgGap) > 0.5
-                          ? 'Employee underestimates skills'
+                          ? 'Higher assessor ratings'
                           : parseFloat(stats.avgGap) < -0.5
-                            ? 'Employee overestimates skills'
-                            : 'Accurate self-assessment'
+                            ? 'Higher self ratings'
+                            : stats.meanAbsoluteGap > 0.5 ? 'Mixed rating differences' : 'Closely aligned ratings'
                         }
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -821,7 +800,7 @@ function IndividualGap() {
                           ? 'You rated them higher than they rated themselves'
                           : parseFloat(stats.avgGap) < -0.5
                             ? 'They rated themselves higher than you rated them'
-                            : 'Their self-assessment closely matches your rating'
+                            : stats.meanAbsoluteGap > 0.5 ? 'Ratings differ by competency even though the overall averages are similar' : 'Ratings are close on average across paired competencies'
                         }
                       </p>
                     </div>
@@ -834,7 +813,7 @@ function IndividualGap() {
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-8">
               <div className="h-80">
                 {chartType === 'bar' ? (
-                  <Bar data={getChartData() || {labels: [], datasets: []}} options={barOptions} />
+                  <Bar data={getChartData() || {labels: [], datasets: []}} options={{ ...barOptions, scales: { ...barOptions.scales, y: { ...barOptions.scales.y, max: maxLevel, title: { ...barOptions.scales.y.title, text: `Rating (1–${maxLevel})` } } } }} />
                 ) : (
                   <Pie data={getPieChartData() || {labels: [], datasets: []}} options={pieOptions} />
                 )}

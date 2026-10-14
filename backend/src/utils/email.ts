@@ -1,7 +1,7 @@
 import https from 'https';
 
-const postmarkToken = process.env.POSTMARK_SERVER_TOKEN || '';
-const postmarkFrom = process.env.POSTMARK_FROM || '';
+const postmarkToken = (process.env.POSTMARK_SERVER_TOKEN || '').trim();
+const postmarkFrom = (process.env.POSTMARK_FROM || '').trim();
 const postmarkMessageStream = process.env.POSTMARK_MESSAGE_STREAM || 'outbound';
 
 type PostmarkResult = { statusCode: number; body: any };
@@ -50,6 +50,9 @@ export async function verifyPostmark() {
 }
 
 export async function sendMail(to: string, subject: string, html: string, text?: string) {
+  if (postmarkToken && /@example\.(com|net|org)(?:\s*>\s*)?$/i.test(postmarkFrom)) {
+    throw new Error('POSTMARK_FROM is an example address. Set POSTMARK_FROM in backend/.env to a confirmed Postmark Sender Signature address, then restart the backend.');
+  }
   if (!isPostmarkConfigured()) {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('POSTMARK_SERVER_TOKEN and POSTMARK_FROM must be configured in production');

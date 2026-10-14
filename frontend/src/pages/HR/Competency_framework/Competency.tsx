@@ -74,6 +74,7 @@ function Competency() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+    setError(null);
         if ((selectedItem && hasUpdatedItem) || (!selectedItem && hasAddedItem)) {
             alert("You have already " + (selectedItem ? "updated" : "added") + " this item. Please close this dialog and try again.");
             return;
@@ -242,6 +243,7 @@ function Competency() {
                 {selectedItem ? "Edit Competency" : "Add New Competency"}
               </h2>
               <form onSubmit={handleSubmit}>
+              {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
                 <div className="mb-4">
                   <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Competency Name
@@ -320,7 +322,8 @@ function Competency() {
             <div className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-lg dark:bg-gray-800">
               <h2 className="mb-2 text-xl font-semibold text-gray-900 dark:text-gray-100">Delete Competency</h2>
               <p className="text-sm text-gray-600 dark:text-gray-400">Are you sure you want to delete "{selectedItem?.name}"? This action cannot be undone.</p>
-              <div className="mt-6 flex justify-end gap-3">
+              {error && <p role="alert" className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
+            <div className="mt-6 flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => { setShowDeleteModal(false); setSelectedItem(null); }}

@@ -1,3 +1,4 @@
+import { matchingSelf, currentAssignment, agreementPercentage as calculateAgreement } from '../../../utils/gapEvidence';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import {
@@ -22,6 +23,7 @@ import {
   getAssessments,
   listUsers,
   getCompetencies,
+  getProficiencyLevels,
   getEmployeeJobAssignments,
   getDepartments,
   getJobs,
@@ -205,6 +207,7 @@ type ChartOptions = {
 
 function OrganizationGap() {
   const { user } = useAuth();
+  const [maxLevel, setMaxLevel] = useState(5);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [assessments, setAssessments] = useState<EmployeeAssessment[]>([]);
@@ -229,7 +232,7 @@ function OrganizationGap() {
         setError(null);
 
         // Fetch all data from backend in parallel
-        const [allAssessments, users, comps, jobAssigns, depts, jobsData, allAppraisals, questions] = await Promise.all([
+        const [allAssessments, users, comps, jobAssigns, depts, jobsData, allAppraisals, questions, levels] = await Promise.all([
           getAssessments(),
           listUsers(),
           getCompetencies(),
@@ -237,25 +240,20 @@ function OrganizationGap() {
           getDepartments(),
           getJobs(),
           listAppraisals(),
-          getAppraisalQuestions()
+          getAppraisalQuestions(),
+          getProficiencyLevels()
         ]);
+        setMaxLevel(Math.max(1, ...levels.map(level => level.levelNumber), ...(levels.length ? [] : [5])));
 
         if (!isMounted) return;
 
         // Compare only reviewed assessor ratings with matching completed self ratings.
-        const selfByEmployee = new Map<string, Assessment>();
-        allAssessments
-          .filter(assessment => assessment.type === 'SELF' && assessment.status === 'COMPLETED')
-          .forEach(assessment => {
-            if (!selfByEmployee.has(assessment.employeeId)) selfByEmployee.set(assessment.employeeId, assessment);
-          });
-
         const reviewedAssessorAssessments = allAssessments.filter(
           assessment => assessment.type === 'ASSESSOR' && assessment.status === 'REVIEWED'
         );
 
         const processedData: EmployeeAssessment[] = reviewedAssessorAssessments.flatMap(assessorAssessment => {
-          const selfAssessment = selfByEmployee.get(assessorAssessment.employeeId);
+          const selfAssessment = matchingSelf(allAssessments, assessorAssessment);
           if (!selfAssessment) return [];
           const selfRatingsByCompetency = new Map((selfAssessment.ratings || []).map(rating => [rating.competencyId, rating]));
           const comparableRatings = (assessorAssessment.ratings || []).flatMap(assessorRating => {
@@ -272,7 +270,7 @@ function OrganizationGap() {
           });
           if (comparableRatings.length === 0) return [];
           const employee = users.find(u => u.id === assessorAssessment.employeeId);
-          const jobAssignment = jobAssigns.find(ja => ja.employeeId === assessorAssessment.employeeId);
+          const jobAssignment = currentAssignment(jobAssigns, assessorAssessment.employeeId);
           const dept = depts.find(d => d.id === jobAssignment?.job?.departmentId);
           const job = jobAssignment?.job;
           
@@ -301,7 +299,7 @@ function OrganizationGap() {
         // Get departments with employee counts
         if (depts) {
           const departmentsWithCounts = depts.map(dept => {
-            const count = processedData.filter(a => a.department_id === dept.id).length;
+            const count = new Set(processedData.filter(a => a.department_id === dept.id).map(a => a.employee_id)).size;
             return {
               id: dept.id,
               name: dept.name,
@@ -315,7 +313,7 @@ function OrganizationGap() {
         // Get job roles with employee counts
         if (jobsData) {
           const jobRolesWithCounts = jobsData.map(role => {
-            const count = processedData.filter(a => a.job_role_id === role.id).length;
+            const count = new Set(processedData.filter(a => a.job_role_id === role.id).map(a => a.employee_id)).size;
             return {
               id: role.id,
               name: role.title,
@@ -339,16 +337,22 @@ function OrganizationGap() {
         if (isMounted && allAppraisals && questions) {
           // Filter for completed appraisals
           const completedAppraisals = allAppraisals.filter(
-            (a) => a.status === 'COMPLETED' || a.status === 'REVIEWED'
+            (a) => a.type === 'ASSESSOR' && (a.status === 'COMPLETED' || a.status === 'REVIEWED')
           );
 
           // Fetch responses for each appraisal and process data
           const appraisalPromises = completedAppraisals.map(async (appraisal) => {
             try {
               const responses = await getAppraisalResponses(appraisal.id);
+              const selfAppraisal = matchingSelf(allAppraisals, appraisal);
+              const selfResponses = selfAppraisal ? await getAppraisalResponses(selfAppraisal.id) : [];
+              const pairedResponses = responses.flatMap(response => {
+                const own = selfResponses.find(item => item.questionId === response.questionId);
+                return own?.employeeRating != null && response.assessorRating != null ? [{ ...response, employeeRating: own.employeeRating }] : [];
+              });
               const employee = users.find(u => u.id === appraisal.employeeId);
               const assessor = appraisal.assessorId ? users.find(u => u.id === appraisal.assessorId) : null;
-              const jobAssignment = jobAssigns.find(ja => ja.employeeId === appraisal.employeeId);
+              const jobAssignment = currentAssignment(jobAssigns, appraisal.employeeId);
               const dept = depts.find(d => d.id === jobAssignment?.job?.departmentId);
               const job = jobAssignment?.job;
 
@@ -366,7 +370,7 @@ function OrganizationGap() {
                 last_updated: appraisal.completedAt || appraisal.createdAt,
                 status: appraisal.status,
                 progress: 100,
-                question_responses: (responses || []).map((response: any) => {
+                question_responses: pairedResponses.map((response: any) => {
                   const question = questions.find(q => q.id === response.questionId);
                   return {
                     id: response.id,
@@ -384,6 +388,7 @@ function OrganizationGap() {
               };
             } catch (error) {
               console.error(`Error fetching responses for appraisal ${appraisal.id}:`, error);
+              if (isMounted) setError("Some appraisal evidence could not be loaded. Refresh to retry.");
               return null;
             }
           });
@@ -416,8 +421,8 @@ function OrganizationGap() {
     };
   }, [user]);
 
-  // Filter assessments based on selected time range
-  const filteredAssessments = assessments.filter(assessment => {
+  // Apply the selected period consistently to competency and appraisal evidence.
+  const inSelectedPeriod = (assessment: { last_updated: string }) => {
     // Filter by time range
     if (timeRange !== 'all') {
       const assessmentDate = new Date(assessment.last_updated);
@@ -443,7 +448,9 @@ function OrganizationGap() {
     }
 
     return true;
-  });
+  };
+  const filteredAssessments = assessments.filter(inSelectedPeriod);
+  const filteredAppraisals = performanceAppraisals.filter(inSelectedPeriod);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
@@ -605,7 +612,7 @@ function OrganizationGap() {
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Appraisals</h3>
                       <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                        {performanceAppraisals.length}
+                        {filteredAppraisals.length}
                       </div>
                       <p className="text-sm text-gray-600 dark:text-gray-400">
                         Total performance appraisals
@@ -615,14 +622,14 @@ function OrganizationGap() {
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Average Employee Rating</h3>
                       <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                        {performanceAppraisals.length > 0 ?
-                          (performanceAppraisals.reduce((sum, appraisal) => {
+                        {filteredAppraisals.length > 0 ?
+                          (filteredAppraisals.reduce((sum, appraisal) => {
                             const ratings = appraisal.question_responses
                               .map(r => r.employee_rating || 0)
                               .filter(r => r > 0);
                             return sum + (ratings.length > 0 ?
                               (ratings.reduce((s, r) => s + r, 0) / ratings.length) : 0);
-                          }, 0) / performanceAppraisals.length).toFixed(1) : 'N/A'}
+                          }, 0) / filteredAppraisals.length).toFixed(1) : 'N/A'}
                       </div>
                       <p className="text-sm text-gray-600 dark:text-gray-400">
                         Across all questions
@@ -632,14 +639,14 @@ function OrganizationGap() {
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Average Assessor Rating</h3>
                       <div className="text-2xl font-bold text-pink-600 dark:text-pink-400">
-                        {performanceAppraisals.length > 0 ?
-                          (performanceAppraisals.reduce((sum, appraisal) => {
+                        {filteredAppraisals.length > 0 ?
+                          (filteredAppraisals.reduce((sum, appraisal) => {
                             const ratings = appraisal.question_responses
                               .map(r => r.assessor_rating || 0)
                               .filter(r => r > 0);
                             return sum + (ratings.length > 0 ?
                               (ratings.reduce((s, r) => s + r, 0) / ratings.length) : 0);
-                          }, 0) / performanceAppraisals.length).toFixed(1) : 'N/A'}
+                          }, 0) / filteredAppraisals.length).toFixed(1) : 'N/A'}
                       </div>
                       <p className="text-sm text-gray-600 dark:text-gray-400">
                         Across all questions
@@ -649,12 +656,12 @@ function OrganizationGap() {
                 ) : (
                   <>
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
-                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Assessments</h3>
+                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Employees</h3>
                       <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                        {filteredAssessments.length}
+                        {new Set(filteredAssessments.map(a => a.employee_id)).size}
                       </div>
                       <p className="text-sm text-gray-600 dark:text-gray-400">
-                        Total reviewed assessments
+                        Unique employees with reviewed assessments
                       </p>
                     </div>
 
@@ -698,12 +705,14 @@ function OrganizationGap() {
               <div className="h-80">
                 {viewMode === 'organization' ? (
                   <OrganizationCharts
+                    maxLevel={maxLevel}
                     assessments={filteredAssessments}
                     competencies={competencies}
                     chartType={chartType}
                   />
                 ) : viewMode === 'department' ? (
                   <DepartmentCharts
+                    maxLevel={maxLevel}
                     assessments={filteredAssessments}
                     departments={departments}
                     competencies={competencies}
@@ -711,6 +720,7 @@ function OrganizationGap() {
                   />
                 ) : viewMode === 'job' ? (
                   <JobRoleCharts
+                    maxLevel={maxLevel}
                     assessments={filteredAssessments}
                     jobRoles={jobRoles}
                     competencies={competencies}
@@ -718,7 +728,7 @@ function OrganizationGap() {
                   />
                 ) : (
                   <PerformanceAppraisalCharts
-                    appraisals={performanceAppraisals}
+                    appraisals={filteredAppraisals}
                     questions={appraisalQuestions}
                     chartType={chartType}
                   />
@@ -751,7 +761,7 @@ function OrganizationGap() {
                   />
                 ) : (
                   <PerformanceAppraisalTable
-                    appraisals={performanceAppraisals}
+                    appraisals={filteredAppraisals}
                     questions={appraisalQuestions}
                   />
                 )}
@@ -769,6 +779,7 @@ interface OrganizationChartsProps {
   assessments: EmployeeAssessment[];
   competencies: Competency[];
   chartType: 'bar' | 'pie';
+  maxLevel: number;
 }
 
 // Organization Table Component
@@ -1154,7 +1165,7 @@ const JobRoleTable: React.FC<JobRoleTableProps> = ({ assessments, jobRoles }) =>
   );
 };
 
-const OrganizationCharts: React.FC<OrganizationChartsProps> = ({ assessments, competencies, chartType }) => {
+const OrganizationCharts: React.FC<OrganizationChartsProps> = ({ assessments, competencies, chartType, maxLevel }) => {
   // Chart options with default values
 
   const [chartOptions, setChartOptions] = useState<ChartOptions>({
@@ -1411,13 +1422,8 @@ const OrganizationCharts: React.FC<OrganizationChartsProps> = ({ assessments, co
         .map((_id, index) => index)
         .filter(index => selfRatings[competencyIds[index]].length > 0 && assessorRatings[competencyIds[index]].length > 0);
       if (comparableCompetencyIndexes.length === 0) return null;
-      const avgSelfRating = comparableCompetencyIndexes.reduce((sum, index) => sum + avgSelfRatings[index], 0) / comparableCompetencyIndexes.length;
-      const avgAssessorRating = comparableCompetencyIndexes.reduce((sum, index) => sum + avgAssessorRatings[index], 0) / comparableCompetencyIndexes.length;
-      const overallGap = Math.abs(avgAssessorRating - avgSelfRating);
-
-      // Calculate agreement percentage (inverse of gap)
-      const maxPossibleGap = 4; // Maximum possible gap is 4 (between 1 and 5)
-      const agreementPercentage = Math.max(0, Math.min(100, 100 - (overallGap / maxPossibleGap * 100)));
+      const agreementPercentage = calculateAgreement(assessments.flatMap(assessment => assessment.competency_ratings.flatMap(rating =>
+        rating.assessor_rating != null ? [[rating.rating, rating.assessor_rating] as [number, number]] : [])), Math.max(1, maxLevel - 1));
 
       return {
         labels: ['Agreement', 'Gap'],
@@ -1451,7 +1457,7 @@ const OrganizationCharts: React.FC<OrganizationChartsProps> = ({ assessments, co
 
   return (
     <div className="h-full">
-      {chartType === 'bar' && <Bar data={chartData} options={chartOptions} />}
+      {chartType === 'bar' && <Bar data={chartData} options={{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales?.y, max: maxLevel, title: { display: true, text: `Average rating (1–${maxLevel})` } } } }} />}
       {chartType === 'pie' && <Pie data={chartData} options={chartOptions} />}
     </div>
   );
@@ -1463,9 +1469,10 @@ interface DepartmentChartsProps {
   departments: Department[];
   competencies: Competency[];
   chartType: 'bar' | 'pie';
+  maxLevel: number;
 }
 
-const DepartmentCharts: React.FC<DepartmentChartsProps> = ({ assessments, departments, chartType }) => {
+const DepartmentCharts: React.FC<DepartmentChartsProps> = ({ assessments, departments, chartType, maxLevel }) => {
   // Similar implementation to OrganizationCharts but grouped by department
   // For brevity, we'll implement a simplified version
 
@@ -1722,7 +1729,7 @@ const DepartmentCharts: React.FC<DepartmentChartsProps> = ({ assessments, depart
 
   return (
     <div className="h-full">
-      {chartType === 'bar' && <Bar data={chartData} options={chartOptions} />}
+      {chartType === 'bar' && <Bar data={chartData} options={{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales?.y, max: maxLevel, title: { display: true, text: `Average rating (1–${maxLevel})` } } } }} />}
       {chartType === 'pie' && <Pie data={chartData} options={chartOptions} />}
     </div>
   );
@@ -1734,9 +1741,10 @@ interface JobRoleChartsProps {
   jobRoles: JobRole[];
   competencies: Competency[];
   chartType: 'bar' | 'pie';
+  maxLevel: number;
 }
 
-const JobRoleCharts: React.FC<JobRoleChartsProps> = ({ assessments, jobRoles, chartType }) => {
+const JobRoleCharts: React.FC<JobRoleChartsProps> = ({ assessments, jobRoles, chartType, maxLevel }) => {
   // Similar implementation to DepartmentCharts but grouped by job role
   // For brevity, we'll implement a simplified version
 
@@ -1993,7 +2001,7 @@ const JobRoleCharts: React.FC<JobRoleChartsProps> = ({ assessments, jobRoles, ch
 
   return (
     <div className="h-full">
-      {chartType === 'bar' && <Bar data={chartData} options={chartOptions} />}
+      {chartType === 'bar' && <Bar data={chartData} options={{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales?.y, max: maxLevel, title: { display: true, text: `Average rating (1–${maxLevel})` } } } }} />}
       {chartType === 'pie' && <Pie data={chartData} options={chartOptions} />}
     </div>
   );
@@ -2369,14 +2377,8 @@ const PerformanceAppraisalCharts: React.FC<PerformanceAppraisalChartsProps> = ({
         ],
       };
     } else {
-      // Calculate overall averages for pie chart
-      const avgEmployeeRating = avgEmployeeRatings.reduce((sum, r) => sum + r, 0) / avgEmployeeRatings.length;
-      const avgAssessorRating = avgAssessorRatings.reduce((sum, r) => sum + r, 0) / avgAssessorRatings.length;
-      const overallGap = Math.abs(avgAssessorRating - avgEmployeeRating);
-
-      // Calculate agreement percentage (inverse of gap)
-      const maxPossibleGap = 4; // Maximum possible gap is 4 (between 1 and 5)
-      const agreementPercentage = 100 - (overallGap / maxPossibleGap * 100);
+      const agreementPercentage = calculateAgreement(appraisals.flatMap(appraisal => appraisal.question_responses.flatMap(response =>
+        response.employee_rating != null && response.assessor_rating != null ? [[response.employee_rating, response.assessor_rating] as [number, number]] : [])));
 
       return {
         labels: ['Agreement', 'Gap'],

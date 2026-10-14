@@ -45,6 +45,7 @@ export default function CompetencyProficiency() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     try {
       setIsAdding(true);
       if (!formData.label.trim() || formData.levelNumber <= 0) {
@@ -200,6 +201,7 @@ export default function CompetencyProficiency() {
             <p className="mt-1 text-center text-sm text-gray-500 dark:text-gray-400">{selectedLevel ? "Update this organisation proficiency level" : "Create a new proficiency level"}</p>
             
             <form onSubmit={handleSubmit} className="mt-6 space-y-4 max-h-[70vh] overflow-y-auto pr-2 pl-1">
+              {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
               <div>
                 <label htmlFor="level_number" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Level Number</label>
                 <input

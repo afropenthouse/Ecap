@@ -192,6 +192,9 @@ const hrNavItems: NavItem[] = [
     subItems: [
       // { name: "Individual Gap", path: "/individual-gap" }, // Removed as HR doesn't need individual gap analysis
       { name: "Organization Gap", path: "/organization-gap" },
+      { name: "Recommendations", path: "/recommendations" },
+      { name: "Succession Planning", path: "/succession" },
+      { name: "Competency & Performance Reports", path: "/competency-performance-reports" },
     ],
   },
 ];
@@ -263,7 +266,7 @@ const AppSidebar: React.FC = () => {
         }));
       }
     }
-  }, [openSubmenu]);
+  }, [openSubmenu, isExpanded, isHovered, isMobileOpen]);
 
   const handleSubmenuToggle = (index: number, menuType: "main") => {
     setOpenSubmenu((prevOpenSubmenu) => {
@@ -284,6 +287,8 @@ const AppSidebar: React.FC = () => {
         <li key={nav.name}>
           {nav.subItems ? (
             <button
+              aria-label={nav.name}
+              aria-expanded={openSubmenu?.type === menuType && openSubmenu?.index === index}
               onClick={() => handleSubmenuToggle(index, menuType)}
               className={`menu-item group ${
                 openSubmenu?.type === menuType && openSubmenu?.index === index
@@ -347,7 +352,9 @@ const AppSidebar: React.FC = () => {
                 subMenuRefs.current[`${menuType}-${index}`] = el;
               }}
               className="overflow-hidden transition-all duration-300"
+              aria-hidden={!(openSubmenu?.type === menuType && openSubmenu?.index === index)}
               style={{
+                visibility: openSubmenu?.type === menuType && openSubmenu?.index === index ? 'visible' : 'hidden',
                 height:
                   openSubmenu?.type === menuType && openSubmenu?.index === index
                     ? `${subMenuHeight[`${menuType}-${index}`]}px`

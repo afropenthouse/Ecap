@@ -19,6 +19,7 @@ const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
 const OrgSignup = lazy(() => import("./pages/auth/OrgSignup"));
 const AcceptInvite = lazy(() => import("./pages/auth/AcceptInvite"));
 const OrganizationSettings = lazy(() => import("./pages/HR/OrganizationSettings"));
+const UserProfiles = lazy(() => import("./pages/UserProfiles"));
 const HRRoleManagement = lazy(() => import("./pages/HR/Role_management/RoleManagement"));
 const PageDescription = lazy(() => import("./pages/Employee/PageDescription/PageDescription"));
 const Home = lazy(() => import("./pages/Dashboard/Home"));
@@ -34,6 +35,7 @@ const BookDemoPage = lazy(() => import('./pages/NavPages/BookDemoPage'));
 const EmployeeAppraisal = lazy(() => import("./pages/Employee/Performance_appraisal/EmployeeAppraisal"));
 const AssessorAppraisal = lazy(() => import("./pages/Assessor/Performance_appraisal/AssessorAppraisal"));
 const HRAppraisal = lazy(() => import("./pages/HR/Performance_appraisal/HRAppraisal"));
+const TalentInsights = lazy(() => import("./pages/HR/Analytics/TalentInsights"));
 
 // Employee Components
 // const User = lazy(() => import("./pages/Employee/User_and_role_management/User"));
@@ -164,6 +166,7 @@ export default function App() {
 
               <Route element={<RoleBasedRoute allowedRoles={['employee', 'assessor', 'hr']} />}>
                 <Route path="/dashboard" element={<Home />} />
+                <Route path="/profile" element={<UserProfiles />} />
                 <Route path="/page-description" element={<RolePage employee={<PageDescription />} assessor={<AssessorPageDescription />} hr={<HRPageDescription />} />} />
                 <Route path="/employee-details" element={<EmployeeDetailsByRole />} />
                 <Route path="/employee-job-assignment" element={<RolePage employee={<EmployeeJobAssignment />} assessor={<AssessorEmployeeJobAssignment />} hr={<HREmployeeJobAssignment />} />} />
@@ -184,6 +187,9 @@ export default function App() {
                 <Route path="/performance-appraisal" element={<RolePage employee={<EmployeeAppraisal />} assessor={<AssessorAppraisal />} hr={<HRAppraisal />} />} />
               </Route>
               <Route element={<RoleBasedRoute allowedRoles={['hr']} />}>
+                <Route path="/recommendations" element={<TalentInsights />} />
+                <Route path="/succession" element={<TalentInsights />} />
+                <Route path="/competency-performance-reports" element={<TalentInsights />} />
                 <Route path="/organization-settings" element={<OrganizationSettings />} />
                 <Route path="/team-members" element={<HRRoleManagement />} />
                 <Route path="/role-management" element={<Navigate to="/team-members" replace />} />

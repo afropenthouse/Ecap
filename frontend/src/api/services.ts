@@ -153,12 +153,13 @@ export const updateDepartment = (id: string, payload: { name?: string }) => api.
 export const deleteDepartment = (id: string) => api.delete(`/departments/${id}`);
 
 // Jobs APIs
-export const getJobs = () => api.get<Job[]>('/jobs');
+export const getJobs = (options?: { includeGenerated?: boolean }) => api.get<Job[]>(`/jobs${options?.includeGenerated ? '?includeGenerated=true' : ''}`);
 export const createJob = (payload: { title: string; description?: string; departmentId?: string | null }) =>
   api.post<Job>('/jobs', payload);
 export const updateJob = (id: string, payload: { title?: string; description?: string; departmentId?: string | null }) =>
   api.put<Job>(`/jobs/${id}`, payload);
 export const deleteJob = (id: string) => api.delete(`/jobs/${id}`);
+export const removeGeneratedJobs = () => api.delete<{ jobsRemoved: number; assignmentsRemoved: number }>('/jobs/generated');
 
 // Job Requirements APIs
 export interface JobRequirement {
@@ -264,7 +265,7 @@ export const listEmployeeJobAssignments = (params?: { employeeId?: string; jobId
 };
 export const createEmployeeJobAssignment = (payload: { employeeId: string; jobId: string; startDate?: string }) =>
   api.post<EmployeeJobAssignment>('/job-assignments', payload);
-export const updateEmployeeJobAssignment = (id: string, payload: { employeeId?: string; jobId?: string; startDate?: string }) =>
+export const updateEmployeeJobAssignment = (id: string, payload: { employeeId?: string; jobId?: string; startDate?: string | null }) =>
   api.put<EmployeeJobAssignment>(`/job-assignments/${id}`, payload);
 export const deleteEmployeeJobAssignment = (id: string) => api.delete(`/job-assignments/${id}`);
 export const getEmployeeJobAssignments = (employeeId?: string) => {

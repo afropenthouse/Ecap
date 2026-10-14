@@ -4,6 +4,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
+    "test:talent": "npm run build && node scripts/talent-insights.test.cjs && node scripts/talent-routes.test.cjs && node scripts/talent-ai.test.cjs",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
@@ -21,7 +22,8 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "openai": "^7.32.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

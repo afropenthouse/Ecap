@@ -24,6 +24,7 @@ export default function ConsensusAssessment() {
   const autoSavedConsensus = useRef(new Set<string>());
 
   const loadData = useCallback(async () => {
+    autoSavedConsensus.current.clear();
     setLoading(true);
     setError('');
     try {
@@ -58,7 +59,7 @@ export default function ConsensusAssessment() {
     if (!group.self || !isComplete(group.self)) continue;
     const employeeAssignments = assignments.filter(assignment => assignment.employeeId === employeeId);
     if (!employeeAssignments.length) continue;
-    const assignedAssessments = employeeAssignments.map(assignment => group.assessors.find(assessment => assessment.assessorId === assignment.assessorId)).filter((assessment): assessment is Assessment => !!assessment);
+    const assignedAssessments = employeeAssignments.map(assignment => group.assessors.find(assessment => assessment.assessorId === assignment.assessorId && Date.parse(assessment.createdAt) >= Date.parse(group.self!.createdAt))).filter((assessment): assessment is Assessment => !!assessment);
     if (assignedAssessments.length !== employeeAssignments.length || assignedAssessments.some(assessment => !isComplete(assessment))) continue;
 
     const competencyIds = [...new Set((group.self.ratings || []).map(rating => rating.competencyId))];
@@ -118,7 +119,7 @@ export default function ConsensusAssessment() {
   return <main className="p-6">
     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Consensus Assessments</h1>
     <p className="mb-6 mt-1 text-gray-600 dark:text-gray-400">Consensus results are calculated and saved automatically after the employee and all assigned assessors complete their assessments.</p>
-    {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</p>}
+    {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}<button onClick={() => void loadData()} className="ml-3 font-medium underline">Retry</button></p>}
     {loading ? <p className="text-gray-500">Loading assessments…</p> : rows.length === 0 ? <p className="rounded-lg border border-gray-200 bg-white p-5 text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">No employees have completed all assigned assessments yet.</p> : <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
       <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800"><thead className="bg-gray-50 dark:bg-gray-800"><tr>
         <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Employee</th><th className="px-4 py-3 text-center text-xs font-semibold uppercase text-gray-500">Self rating</th><th className="px-4 py-3 text-center text-xs font-semibold uppercase text-gray-500">Assigned assessors</th><th className="px-4 py-3 text-center text-xs font-semibold uppercase text-gray-500">Consensus</th><th className="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Action</th>

@@ -10,7 +10,7 @@ async function createAssessmentIfSelfIsComplete(organizationId: string, employee
     orderBy: { createdAt: 'desc' },
   });
   if (!selfAssessment) return;
-  const existing = await tx.assessment.findFirst({ where: { organizationId, employeeId, assessorId, type: 'ASSESSOR' } });
+  const existing = await tx.assessment.findFirst({ where: { organizationId, employeeId, assessorId, type: 'ASSESSOR', createdAt: { gte: selfAssessment.createdAt } } });
   if (!existing) await tx.assessment.create({ data: { organizationId, employeeId, assessorId, type: 'ASSESSOR', status: 'PENDING' } });
 }
 
@@ -57,7 +57,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 router.post('/', authMiddleware, rbac(['HR']), async (req: Request, res: Response) => {
   try {
     const { assessorId, employeeId } = req.body as { assessorId: string; employeeId: string };
-    if (!assessorId || !employeeId) return res.status(400).json({ error: 'assessorId and employeeId are required' });
+    if (typeof assessorId !== 'string' || !assessorId.trim() || typeof employeeId !== 'string' || !employeeId.trim()) return res.status(400).json({ error: 'Select both an assessor and an employee' });
 
     const [assessor, employee] = await Promise.all([
       prisma.user.findUnique({ where: { id: assessorId } }),
@@ -70,6 +70,7 @@ router.post('/', authMiddleware, rbac(['HR']), async (req: Request, res: Respons
     // Optional validation: ensure assessor has ASSESSOR role and employee has EMPLOYEE role
     if (assessor.role !== 'ASSESSOR') return res.status(400).json({ error: 'Selected user is not an assessor' });
     if (employee.role !== 'EMPLOYEE') return res.status(400).json({ error: 'Selected user is not an employee' });
+    if (!assessor.isActive || !employee.isActive) return res.status(400).json({ error: 'Select an active assessor and an active employee' });
 
     try {
       const created = await prisma.$transaction(async tx => {
@@ -97,6 +98,10 @@ router.put('/:id', authMiddleware, rbac(['HR']), async (req: Request, res: Respo
   try {
     const { id } = req.params;
     const { assessorId, employeeId } = req.body as { assessorId?: string; employeeId?: string };
+    if ((assessorId !== undefined && (typeof assessorId !== 'string' || !assessorId.trim())) || (employeeId !== undefined && (typeof employeeId !== 'string' || !employeeId.trim()))) {
+      return res.status(400).json({ error: 'Select valid assessor and employee IDs' });
+    }
+    if (assessorId === undefined && employeeId === undefined) return res.status(400).json({ error: 'Select an assessor or employee to update' });
 
     const existing = await prisma.assessorAssignment.findUnique({ where: { id } });
     if (!existing || existing.organizationId !== req.user!.organizationId) return res.status(404).json({ error: 'Assignment not found' });
@@ -111,6 +116,7 @@ router.put('/:id', authMiddleware, rbac(['HR']), async (req: Request, res: Respo
     if (!employee || employee.organizationId !== req.user!.organizationId || employee.role !== 'EMPLOYEE') {
       return res.status(400).json({ error: 'Select an employee from your organization' });
     }
+    if (!assessor.isActive || !employee.isActive) return res.status(400).json({ error: 'Select an active assessor and an active employee' });
 
     const updated = await prisma.$transaction(async tx => {
       const assignment = await tx.assessorAssignment.update({ where: { id }, data: { assessorId, employeeId } });

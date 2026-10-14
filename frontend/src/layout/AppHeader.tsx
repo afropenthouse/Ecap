@@ -2,9 +2,10 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { HorizontaLDots, CloseLineIcon } from "../icons";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
+import { UserCircleIcon, ArrowRightOnRectangleIcon, Bars3Icon } from "@heroicons/react/24/outline";
 import { useAuth } from "../context/AuthContext";
 
-export default function AppHeader() {
+export default function AppHeader({ onOpenSidebar, sidebarOpen = false }: { onOpenSidebar?: () => void; sidebarOpen?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
   const { user, organization: org, signOut } = useAuth();
   const navigate = useNavigate();
@@ -61,6 +62,7 @@ export default function AppHeader() {
         <div className="flex h-16 justify-between">
           <div className="flex">
             <div className="flex flex-shrink-0 items-center">
+              {onOpenSidebar && <button type="button" onClick={onOpenSidebar} aria-label="Open workspace menu" aria-expanded={sidebarOpen} className="mr-3 inline-flex size-10 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-300 dark:hover:bg-gray-800 lg:hidden"><Bars3Icon aria-hidden="true" className="size-6" /></button>}
               {user ? (
                 <span className="flex items-center text-xl font-bold text-gray-900 dark:text-white cursor-default">
                   {org?.logoUrl ? (
@@ -133,11 +135,15 @@ export default function AppHeader() {
                 >
                   Book a demo
                 </Link>
+                <Link to="/profile" aria-label="My profile" title="My profile" className="mr-2 inline-flex size-10 items-center justify-center rounded-full border border-gray-200 text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"><UserCircleIcon aria-hidden="true" className="size-6" /></Link>
                 <button
+                  type="button"
+                  aria-label="Sign out"
+                  title="Sign out"
                   onClick={handleSignOut}
-                  className="inline-flex items-center rounded-md border border-transparent bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                  className="inline-flex size-10 items-center justify-center rounded-full border border-red-100 text-red-600 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
                 >
-                  Sign out
+                  <ArrowRightOnRectangleIcon aria-hidden="true" className="size-5" />
                 </button>
               </>
             ) : (
@@ -241,12 +247,18 @@ export default function AppHeader() {
                   >
                     Book a demo
                   </Link>
+                  <div className="flex items-center gap-2 px-4 py-2">
+                  <Link to="/profile" aria-label="My profile" title="My profile" className="inline-flex size-10 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-blue-50 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"><UserCircleIcon aria-hidden="true" className="size-6" /></Link>
                   <button
+                    type="button"
+                    aria-label="Sign out"
+                    title="Sign out"
                     onClick={handleSignOut}
-                    className="block w-full text-left px-4 py-2 text-base font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                    className="inline-flex size-10 items-center justify-center rounded-full border border-red-100 text-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
                   >
-                    Sign out
+                    <ArrowRightOnRectangleIcon aria-hidden="true" className="size-5" />
                   </button>
+                  </div>
                 </>
               ) : (
                 <>

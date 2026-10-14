@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { authMiddleware, rbac } from '../middleware/auth';
+import { validateBody } from '../utils/validateBody';
 
 const router = Router();
 
@@ -15,7 +16,7 @@ router.get('/domains', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/domains', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
+router.post('/domains', authMiddleware, rbac(['HR', 'ASSESSOR']), validateBody({ domainName: { kind: 'text', required: true } }), async (req: Request, res: Response) => {
   try {
     const { domainName } = req.body as { domainName: string };
     const created = await prisma.competencyDomain.create({ data: { organizationId: req.user!.organizationId, domainName } });
@@ -26,7 +27,7 @@ router.post('/domains', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Re
   }
 });
 
-router.put('/domains/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
+router.put('/domains/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), validateBody({ domainName: { kind: 'text', required: true } }), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { domainName } = req.body as { domainName?: string };
@@ -67,7 +68,7 @@ router.get('/categories', authMiddleware, async (req: Request, res: Response) =>
   }
 });
 
-router.post('/categories', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
+router.post('/categories', authMiddleware, rbac(['HR', 'ASSESSOR']), validateBody({ name: { kind: 'text', required: true }, domainId: { kind: 'text', required: true } }), async (req: Request, res: Response) => {
   try {
     const { name, domainId } = req.body as { name: string; domainId: string };
     // Validate domain belongs to org
@@ -83,7 +84,7 @@ router.post('/categories', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req:
   }
 });
 
-router.put('/categories/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
+router.put('/categories/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), validateBody({ name: { kind: 'text', required: true }, domainId: { kind: 'text', required: true } }), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { name, domainId } = req.body as { name?: string; domainId?: string };
@@ -134,7 +135,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
+router.post('/', authMiddleware, rbac(['HR', 'ASSESSOR']), validateBody({ name: { kind: 'text', required: true }, categoryId: { kind: 'text', required: true }, description: { kind: 'text', allowBlank: true, nullable: true } }), async (req: Request, res: Response) => {
   try {
     const { name, description, categoryId } = req.body as { name: string; description?: string; categoryId: string };
     const cat = await prisma.competencyCategory.findUnique({ where: { id: categoryId } });
@@ -149,7 +150,7 @@ router.post('/', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, 
   }
 });
 
-router.put('/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
+router.put('/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), validateBody({ name: { kind: 'text', required: true }, categoryId: { kind: 'text', required: true }, description: { kind: 'text', allowBlank: true, nullable: true } }), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { name, description, categoryId } = req.body as { name?: string; description?: string; categoryId?: string };
@@ -200,7 +201,7 @@ router.get('/levels', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/levels', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
+router.post('/levels', authMiddleware, rbac(['HR', 'ASSESSOR']), validateBody({ levelNumber: { kind: 'integer', required: true }, label: { kind: 'text', required: true }, description: { kind: 'text', allowBlank: true, nullable: true } }), async (req: Request, res: Response) => {
   try {
     const { levelNumber, label, description } = req.body as { levelNumber: number; label: string; description?: string };
     if (!Number.isInteger(levelNumber) || levelNumber < 1 || !label?.trim()) return res.status(400).json({ error: 'A positive whole level number and label are required.' });
@@ -213,7 +214,7 @@ router.post('/levels', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Req
   }
 });
 
-router.put('/levels/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
+router.put('/levels/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), validateBody({ levelNumber: { kind: 'integer', required: true }, label: { kind: 'text', required: true }, description: { kind: 'text', allowBlank: true, nullable: true } }), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { levelNumber, label, description } = req.body as { levelNumber?: number; label?: string; description?: string };

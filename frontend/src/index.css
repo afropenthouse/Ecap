@@ -5,6 +5,11 @@ layer(base);
 
 @custom-variant dark (&:is(.dark *));
 
+/* Keep the app's password toggle as the only reveal button in Edge. */
+input[type="password"]::-ms-reveal {
+  display: none;
+}
+
 @theme {
   --font-*: initial;
   --font-outfit: Outfit, sans-serif;

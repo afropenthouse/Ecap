@@ -200,12 +200,16 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
         },
         assessor: {
           select: { id: true, firstName: true, lastName: true, email: true }
-        }
+        },
+        responses: { select: { employeeRating: true, assessorRating: true } },
       },
       orderBy: { createdAt: 'desc' }
     });
     
-    res.json(list);
+    res.json(list.map(({ responses, ...appraisal }) => {
+      const ratings = responses.map(response => appraisal.type === 'SELF' ? response.employeeRating : response.assessorRating).filter((rating): rating is number => rating !== null);
+      return { ...appraisal, averageRating: ratings.length ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length : null };
+    }));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Failed to list appraisals' });
@@ -257,7 +261,7 @@ router.post('/self', authMiddleware, rbac(['EMPLOYEE']), async (req: Request, re
 router.post('/assessor', authMiddleware, rbac(['ASSESSOR']), async (req: Request, res: Response) => {
   try {
     const { employeeId } = req.body as { employeeId: string };
-    if (!employeeId) return res.status(400).json({ error: 'employeeId is required.' });
+    if (typeof employeeId !== 'string' || !employeeId.trim()) return res.status(400).json({ error: 'employeeId is required.' });
     const organizationId = req.user!.organizationId;
     const [employee, assignment, selfAppraisal] = await Promise.all([
       prisma.user.findFirst({ where: { id: employeeId, organizationId, role: 'EMPLOYEE' } }),
@@ -268,7 +272,7 @@ router.post('/assessor', authMiddleware, rbac(['ASSESSOR']), async (req: Request
     if (!assignment) return res.status(403).json({ error: 'You are not assigned to assess this employee.' });
     if (!selfAppraisal) return res.status(409).json({ error: 'The employee must submit their self-appraisal first.' });
     const existing = await prisma.performanceAppraisal.findFirst({
-      where: { organizationId, employeeId, assessorId: req.user!.id, type: 'ASSESSOR', status: { in: ['PENDING', 'IN_PROGRESS'] } },
+      where: { organizationId, employeeId, assessorId: req.user!.id, type: 'ASSESSOR', createdAt: { gte: selfAppraisal.createdAt }, status: { in: ['PENDING', 'IN_PROGRESS'] } },
       orderBy: { createdAt: 'desc' },
     });
     if (existing) return res.json(existing);
@@ -310,6 +314,7 @@ router.put('/:id/status', authMiddleware, async (req: Request, res: Response) =>
       return res.status(409).json({ error: 'This appraisal is already complete.' });
     }
     if (status === 'REVIEWED' && !isHrReview) return res.status(403).json({ error: 'Only HR can review a completed appraisal.' });
+    if (!isHrReview && !['IN_PROGRESS', 'COMPLETED'].includes(status)) return res.status(400).json({ error: 'You can only start or complete this appraisal.' });
     if (status === 'COMPLETED') {
       if (!['EMPLOYEE', 'ASSESSOR'].includes(req.user!.role)) return res.status(403).json({ error: 'Only the employee or assigned assessor can complete this appraisal.' });
       await ensureDefaultQuestions(appraisal.organizationId);
@@ -337,7 +342,7 @@ router.put('/:id/status', authMiddleware, async (req: Request, res: Response) =>
         const assignments = await tx.assessorAssignment.findMany({ where: { organizationId: appraisal.organizationId, employeeId: appraisal.employeeId } });
         for (const assignment of assignments) {
           const openAssessorAppraisal = await tx.performanceAppraisal.findFirst({
-            where: { organizationId: appraisal.organizationId, type: 'ASSESSOR', employeeId: appraisal.employeeId, assessorId: assignment.assessorId, status: { in: ['PENDING', 'IN_PROGRESS'] } },
+            where: { organizationId: appraisal.organizationId, type: 'ASSESSOR', employeeId: appraisal.employeeId, assessorId: assignment.assessorId, createdAt: { gte: appraisal.createdAt }, status: { in: ['PENDING', 'IN_PROGRESS'] } },
           });
           if (!openAssessorAppraisal) await tx.performanceAppraisal.create({
             data: { organizationId: appraisal.organizationId, type: 'ASSESSOR', status: 'PENDING', employeeId: appraisal.employeeId, assessorId: assignment.assessorId },
@@ -368,8 +373,8 @@ router.post('/:id/responses', authMiddleware, async (req: Request, res: Response
     if (!appraisal || appraisal.organizationId !== req.user!.organizationId) {
       return res.status(404).json({ error: 'Appraisal not found' });
     }
-    if (!questionId || !Number.isInteger(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: 'Choose a rating from 1 to 5 for a question.' });
-    if (typeof comment === 'string' && comment.length > 2000) return res.status(400).json({ error: 'Comments must be 2,000 characters or fewer.' });
+    if (typeof questionId !== 'string' || !questionId.trim() || !Number.isInteger(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: 'Choose a rating from 1 to 5 for a question.' });
+    if (comment !== undefined && (typeof comment !== 'string' || comment.length > 2000)) return res.status(400).json({ error: 'Comments must be text with 2,000 characters or fewer.' });
     const question = await prisma.performanceAppraisalQuestion.findFirst({ where: { id: questionId, organizationId: appraisal.organizationId } });
     if (!question) return res.status(400).json({ error: 'Question does not belong to this organisation.' });
 
@@ -384,47 +389,15 @@ router.post('/:id/responses', authMiddleware, async (req: Request, res: Response
       return res.status(403).json({ error: 'HR can review appraisal responses but cannot edit them.' });
     }
 
-    const existing = await prisma.performanceAppraisalResponse.findUnique({
-      where: { 
-        appraisalId_questionId: { 
-          appraisalId: id, 
-          questionId 
-        } as any 
-      },
+    const responseData = req.user!.role === 'EMPLOYEE'
+      ? { employeeRating: rating, employeeComment: comment || null }
+      : { assessorRating: rating, assessorComment: comment || null };
+    const updated = await prisma.performanceAppraisalResponse.upsert({
+      where: { appraisalId_questionId: { appraisalId: id, questionId } },
+      update: responseData,
+      create: { organizationId: req.user!.organizationId, appraisalId: id, questionId, ...responseData },
     });
-
-    let updated;
-    if (!existing) {
-      updated = await prisma.performanceAppraisalResponse.create({
-        data: {
-          organizationId: req.user!.organizationId,
-          appraisalId: id,
-          questionId,
-          employeeRating: req.user!.role === 'EMPLOYEE' ? rating : null,
-          employeeComment: req.user!.role === 'EMPLOYEE' ? comment || null : null,
-          assessorRating: req.user!.role === 'ASSESSOR' ? rating : null,
-          assessorComment: req.user!.role === 'ASSESSOR' ? comment || null : null,
-        },
-      });
-    } else {
-      const data: any = {};
-      if (req.user!.role === 'EMPLOYEE') { 
-        data.employeeRating = rating; 
-        data.employeeComment = comment || null; 
-      }
-      
-      if (req.user!.role === 'ASSESSOR') { 
-        data.assessorRating = rating; 
-        data.assessorComment = comment || null; 
-      }
-      
-      updated = await prisma.performanceAppraisalResponse.update({ 
-        where: { id: existing.id }, 
-        data 
-      });
-    }
-
-    res.status(existing ? 200 : 201).json(updated);
+    res.status(200).json(updated);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Failed to save response' });

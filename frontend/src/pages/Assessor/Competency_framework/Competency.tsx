@@ -12,6 +12,7 @@ interface Category {
 
 function Competency() {
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<BackendCompetency[]>([]);
     const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
     const [showAddModal, setShowAddModal] = useState(false);
@@ -54,6 +55,7 @@ function Competency() {
             setData(Array.isArray(comps) ? comps : []);
         } catch (error) {
             console.error('Error fetching competencies:', error);
+            setError(error instanceof Error ? error.message : 'Could not complete this action.');
         } finally {
             setLoading(false);
         }
@@ -65,10 +67,12 @@ function Competency() {
             setCategories(Array.isArray(cats) ? cats : []);
         } catch (error) {
             console.error('Error fetching categories:', error);
+            setError(error instanceof Error ? error.message : 'Could not complete this action.');
         }
     };
 
     const handleEdit = (item: BackendCompetency) => {
+        setError(null);
         setSelectedItem(item);
         setFormData({
             name: item.name,
@@ -83,6 +87,7 @@ function Competency() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+    setError(null);
 
         if ((selectedItem && hasUpdatedItem) || (!selectedItem && hasAddedItem)) {
             alert("You have already " + (selectedItem ? "updated" : "added") + " this item. Please close this dialog and try again.");
@@ -114,6 +119,7 @@ function Competency() {
             setSelectedItem(null);
         } catch (error) {
             console.error('Error saving competency:', error);
+            setError(error instanceof Error ? error.message : 'Could not complete this action.');
         } finally {
             setIsAdding(false);
             setIsUpdating(false);
@@ -135,6 +141,7 @@ function Competency() {
             setSelectedItem(null);
         } catch (error) {
             console.error('Error deleting competency:', error);
+            setError(error instanceof Error ? error.message : 'Could not complete this action.');
         } finally {
             setIsDeleting(false);
         }
@@ -150,6 +157,7 @@ function Competency() {
           </div>
           <button
             onClick={() => {
+              setError(null);
               setSelectedItem(null);
               setFormData({ name: "", categoryId: "", description: "" });
               setShowAddModal(true);
@@ -164,6 +172,7 @@ function Competency() {
           </button>
         </div>
 
+        {error && !showAddModal && !showDeleteModal && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
         <div className="mb-8 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-800">
@@ -259,6 +268,7 @@ function Competency() {
                 {selectedItem ? "Edit Competency" : "Add New Competency"}
               </h2>
               <form onSubmit={handleSubmit}>
+              {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
                 <div className="mb-4">
                   <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Competency Name
@@ -342,6 +352,7 @@ function Competency() {
               <p className="mb-6 text-gray-600 dark:text-gray-400">
                 Are you sure you want to delete the competency "{selectedItem?.name}"? This action cannot be undone.
               </p>
+              {error && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => {

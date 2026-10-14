@@ -15,7 +15,7 @@ import {
   getProficiencyLevels,
   addAssessmentRating,
   updateAssessmentStatus,
-  getMyAssignedEmployees,
+  listAssessorAssignments,
   getEmployeeJobAssignments,
   getDepartments,
   getJobs,
@@ -125,14 +125,14 @@ export default function AssessorAssessment() {
             jobsData,
             levels
           ] = await Promise.all([
-            getAssessments().catch(e => { console.error('getAssessments failed:', e); return []; }),
-            listUsers().catch(e => { console.error('listUsers failed:', e); return []; }),
-            getCompetencies().catch(e => { console.error('getCompetencies failed:', e); return []; }),
-            getMyAssignedEmployees().catch(e => { console.error('getMyAssignedEmployees failed:', e); return []; }),
-            getEmployeeJobAssignments().catch(e => { console.error('getEmployeeJobAssignments failed:', e); return []; }),
-            getDepartments().catch(e => { console.error('getDepartments failed:', e); return []; }),
-            getJobs().catch(e => { console.error('getJobs failed:', e); return []; }),
-            getProficiencyLevels().catch(e => { console.error('getProficiencyLevels failed:', e); return []; })
+            getAssessments(),
+            listUsers(),
+            getCompetencies(),
+            listAssessorAssignments(),
+            getEmployeeJobAssignments(),
+            getDepartments(),
+            getJobs(),
+            getProficiencyLevels()
           ]);
           console.log('All data fetched successfully');
         } catch (err) {
@@ -142,8 +142,9 @@ export default function AssessorAssessment() {
 
         // Set basic data
         setCompetencies(comps || []);
-        setProficiencyLevels([...(levels || [])].sort((a, b) => a.levelNumber - b.levelNumber));
-        setAssignedEmployees(assignments || []);
+        setProficiencyLevels(levels.length ? [...levels].sort((a, b) => a.levelNumber - b.levelNumber) : [1, 2, 3, 4, 5].map(levelNumber => ({ id: `default-${levelNumber}`, levelNumber, label: ['Beginner', 'Developing', 'Proficient', 'Advanced', 'Expert'][levelNumber - 1] })));
+        const assignedEmployeeIds = new Set(assignments.map(assignment => assignment.employeeId));
+        setAssignedEmployees(users.filter(employee => assignedEmployeeIds.has(employee.id)));
         setJobAssignments(jobAssigns || []);
         setDepartments(depts || []);
         setJobs(jobsData || []);
@@ -164,7 +165,9 @@ export default function AssessorAssessment() {
 
         const jobAssignmentByEmployee: Record<string, any> = {};
         (jobAssigns || []).forEach(ja => {
-          jobAssignmentByEmployee[ja.employeeId] = ja;
+          if (ja.startDate && Date.parse(ja.startDate) > Date.now()) return;
+          const current = jobAssignmentByEmployee[ja.employeeId];
+          if (!current || (Date.parse(ja.startDate || '') || 0) > (Date.parse(current.startDate || '') || 0)) jobAssignmentByEmployee[ja.employeeId] = ja;
         });
 
         const jobById: Record<string, any> = {};
@@ -234,7 +237,9 @@ export default function AssessorAssessment() {
             }
           });
 
-          const compRatings = Object.values(byComp);
+          const requiredIds = new Set<string>((job?.requirements || []).map((requirement: { competencyId: string }) => requirement.competencyId));
+          const requiredCompetencies = requiredIds.size ? comps.filter(competency => requiredIds.has(competency.id)) : comps;
+          const compRatings = requiredCompetencies.map(competency => byComp[competency.id] || { id: competency.id, competency_id: competency.id, rating: 0, comments: '', assessor_comments: '', assessor_rating: 0 });
           const ratedCompetencies = compRatings.filter(r => r.assessor_rating > 0);
           const overallRating = ratedCompetencies.length > 0
             ? ratedCompetencies.reduce((sum, r) => sum + r.assessor_rating, 0) / ratedCompetencies.length
@@ -349,7 +354,8 @@ export default function AssessorAssessment() {
 
   // Handle rating an assessment
   const handleRateAssessment = (assessment: EmployeeAssessment) => {
-    if (assessment.assessor_id !== user?.id || assessment.status === 'REVIEWED') return;
+    if (assessment.assessor_id !== user?.id || ['COMPLETED', 'REVIEWED'].includes(assessment.status) || !assignedEmployees.some(employee => employee.id === assessment.employee_id)) return;
+    setError(null);
     setSelectedAssessment(assessment);
 
     // Initialize form data with existing ratings
@@ -373,7 +379,7 @@ export default function AssessorAssessment() {
 
   // Handle saving assessor ratings via backend services
   const handleSaveRatings = async () => {
-    if (!selectedAssessment || !user) return;
+    if (!selectedAssessment || !user || loading) return;
     if (selectedAssessment.assessor_id !== user.id) {
       setError('You can view this assessment, but only its assigned assessor can submit ratings.');
       return;
@@ -396,19 +402,7 @@ export default function AssessorAssessment() {
           })
       ));
 
-      // Update assessment status to REVIEWED
-      await updateAssessmentStatus(selectedAssessment.id, 'REVIEWED');
-
-      // Refresh data to get updated assessments
-      const updatedAssessments = await getAssessments();
-      const updatedAssessorAssessments = (updatedAssessments || []).filter(
-        (a: Assessment) => a.type === 'ASSESSOR'
-      );
-
-      // Find the updated assessment
-      const updatedAssessment = updatedAssessorAssessments.find(
-        (a: Assessment) => a.id === selectedAssessment.id
-      );
+      const updatedAssessment = await updateAssessmentStatus(selectedAssessment.id, 'REVIEWED');
 
       if (updatedAssessment) {
         // Recalculate overall rating
@@ -439,7 +433,7 @@ export default function AssessorAssessment() {
 
     } catch (err) {
       console.error('Error saving ratings:', err);
-      setError('Failed to save ratings. Please try again.');
+      setError(err instanceof Error ? err.message : 'Failed to save ratings. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -603,7 +597,7 @@ export default function AssessorAssessment() {
                           <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                         </svg>
                         {assessment.assessor_status === 'reviewed'
-                          ? "You have reviewed this assessment. You can edit your ratings or export to PDF."
+                          ? "You have reviewed this assessment. Your saved ratings are read-only; you can export them to PDF."
                           : "This assessment needs your review. Rate the employee's competencies and provide feedback."}
                       </p>
                     </div>
@@ -641,6 +635,7 @@ export default function AssessorAssessment() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="w-full max-w-4xl bg-white dark:bg-gray-800 rounded-xl shadow-lg max-h-[90vh] flex flex-col">
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
                 <div className="flex items-start justify-between">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -660,44 +655,7 @@ export default function AssessorAssessment() {
               </div>
 
               <div className="p-6 overflow-y-auto flex-1">
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                    Overall Assessment
-                  </h3>
-                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Your Overall Rating
-                    </label>
-                    <div className="flex items-center gap-2">
-                      {proficiencyLevels.map((level) => (
-                        <button
-                          key={level.id}
-                          type="button"
-                          onClick={() => setFormData({...formData, assessor_rating: level.levelNumber})}
-                          className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                            formData.assessor_rating >= level.levelNumber
-                              ? 'bg-yellow-400 text-white'
-                              : 'bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300'
-                          }`}
-                        >
-                          {level.levelNumber}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Your Overall Comments
-                    </label>
-                    <textarea
-                      value={formData.assessor_comments}
-                      onChange={(e) => setFormData({...formData, assessor_comments: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white"
-                      rows={3}
-                      placeholder="Enter your overall assessment comments..."
-                    ></textarea>
-                  </div>
-                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Your overall rating is calculated from the competency ratings below. Add supporting notes for each competency.</p>
 
                 <div className="mt-6">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -747,6 +705,7 @@ export default function AssessorAssessment() {
                                 onChange={(e) => handleRatingChange(rating.competency_id, 'assessor_comments', e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white"
                                 rows={2}
+                                maxLength={2000}
                                 placeholder="Enter your comments for this competency..."
                               ></textarea>
                             </div>

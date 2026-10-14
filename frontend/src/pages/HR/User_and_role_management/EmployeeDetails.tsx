@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { listEmployees, type Department } from '../../../api/services';
+import { Link } from 'react-router-dom';
 
 interface Employee {
   id: string;
@@ -157,6 +158,7 @@ const EmployeeDetails: React.FC = () => {
               <div className="mt-4 flex items-center justify-end gap-2">
                 {!person.isActive && <span className="mr-auto text-xs font-medium text-gray-500 dark:text-gray-400">Deactivated</span>}
                 <button onClick={() => handleViewEmployee(person.id)} className="rounded-lg px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/40">View details</button>
+                {person.role === 'EMPLOYEE' && person.isActive && <Link to={`/recommendations?employeeId=${encodeURIComponent(person.id)}`} className="rounded-lg px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-300">Competency & performance</Link>}
               </div>
             </article>
           ))}

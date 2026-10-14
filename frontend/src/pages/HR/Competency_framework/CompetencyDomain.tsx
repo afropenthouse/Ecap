@@ -76,6 +76,7 @@ export default function CompetencyDomain() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     if (isAdding || isUpdating) return;
 
     try {
@@ -257,6 +258,7 @@ export default function CompetencyDomain() {
               {selectedItem ? "Edit Domain" : "Add New Domain"}
             </h2>
             <form onSubmit={handleSubmit}>
+              {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
               <div className="mb-4">
                 <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Domain Name
@@ -306,6 +308,7 @@ export default function CompetencyDomain() {
             <p className="mb-6 text-gray-600 dark:text-gray-400">
               Are you sure you want to delete the domain "{selectedItem?.domain_name}"? This action cannot be undone.
             </p>
+            {error && <p role="alert" className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   UserIcon,
   PlusIcon,
@@ -15,6 +15,7 @@ import {
   listUsers,
   getJobs,
   listEmployeeJobAssignments,
+  type AssessorAssignment,
   type UserSummary,
   type Job,
   type EmployeeJobAssignment,
@@ -30,6 +31,30 @@ interface AssignmentRow {
   created_at?: string;
 }
 
+
+function buildAssignmentRows(records: AssessorAssignment[], users: UserSummary[], jobs: Job[], jobAssignments: EmployeeJobAssignment[]): AssignmentRow[] {
+  const userById = new Map(users.map(user => [user.id, user]));
+  const jobById = new Map(jobs.map(job => [job.id, job]));
+  const latestJobByEmployee = new Map<string, EmployeeJobAssignment>();
+  for (const assignment of jobAssignments) {
+    const current = latestJobByEmployee.get(assignment.employeeId);
+    const date = assignment.startDate ? new Date(assignment.startDate).getTime() : 0;
+    const currentDate = current?.startDate ? new Date(current.startDate).getTime() : 0;
+    if (!current || date > currentDate) latestJobByEmployee.set(assignment.employeeId, assignment);
+  }
+  return records.map(record => {
+    const employee = record.employee || userById.get(record.employeeId);
+    const assessor = record.assessor || userById.get(record.assessorId);
+    const jobId = latestJobByEmployee.get(record.employeeId)?.jobId;
+    return {
+      id: record.id, employeeId: record.employeeId, assessorId: record.assessorId,
+      employeeName: [employee?.firstName, employee?.lastName].filter(Boolean).join(' ') || employee?.email || 'Unknown employee',
+      assessor: [assessor?.firstName, assessor?.lastName].filter(Boolean).join(' ') || assessor?.email || 'Unknown assessor',
+      jobTitle: jobId ? jobById.get(jobId)?.title || '' : '',
+    };
+  });
+}
+
 export default function EmployeeAssessorAssign() {
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -39,6 +64,7 @@ export default function EmployeeAssessorAssign() {
   const [employees, setEmployees] = useState<UserSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -49,6 +75,9 @@ export default function EmployeeAssessorAssign() {
   const [selectedEmployee, setSelectedEmployee] = useState<string>("");
   const [selectedAssessor, setSelectedAssessor] = useState<string>("");
   const [formJobRole, setFormJobRole] = useState<string>("");
+  const assignedAssessorIds = useMemo(() => new Set(assignments
+    .filter(assignment => assignment.employeeId === selectedEmployee && (!showEditModal || assignment.id !== selectedAssignment?.id))
+    .map(assignment => assignment.assessorId)), [assignments, selectedEmployee, showEditModal, selectedAssignment?.id]);
 
 
   // Load all initial data from backend
@@ -68,33 +97,12 @@ export default function EmployeeAssessorAssign() {
       setJobs(jobsRes);
       setJobAssignments(jobAssignRes);
 
-      const employeesList = usersRes.filter(u => u.role === 'EMPLOYEE');
-      const assessorsList = usersRes.filter(u => u.role === 'ASSESSOR');
+      const employeesList = usersRes.filter(u => u.role === 'EMPLOYEE' && u.isActive !== false);
+      const assessorsList = usersRes.filter(u => u.role === 'ASSESSOR' && u.isActive !== false);
       setEmployees(employeesList);
       setAssessors(assessorsList);
 
-      const rows: AssignmentRow[] = assignRes.map((rec) => {
-        const emp = usersRes.find(u => u.id === rec.employeeId);
-        const ass = usersRes.find(u => u.id === rec.assessorId);
-        const employeeJobAssignments = jobAssignRes
-          .filter(ja => ja.employeeId === rec.employeeId)
-          .sort((a, b) => {
-            const ta = a.startDate ? new Date(a.startDate).getTime() : 0;
-            const tb = b.startDate ? new Date(b.startDate).getTime() : 0;
-            return tb - ta;
-          });
-        const jaForEmp = employeeJobAssignments[0];
-        const job = jobsRes.find(j => j.id === jaForEmp?.jobId);
-        return {
-          id: rec.id,
-          employeeId: rec.employeeId,
-          assessorId: rec.assessorId,
-          employeeName: `${emp?.firstName ?? ''} ${emp?.lastName ?? ''}`.trim(),
-          jobTitle: job?.title ?? '',
-          assessor: `${ass?.firstName ?? ''} ${ass?.lastName ?? ''}`.trim(),
-        };
-      });
-      setAssignments(rows);
+      setAssignments(buildAssignmentRows(assignRes, usersRes, jobsRes, jobAssignRes));
     } catch (err) {
       console.error('Error loading data:', err);
       setError('Failed to load data. Please try again later.');
@@ -140,41 +148,6 @@ export default function EmployeeAssessorAssign() {
     setFormJobRole(job?.title ?? "");
   }, [selectedEmployee, jobAssignments, jobs]);
 
-  const fetchAssignments = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const assignRes = await listAssessorAssignments();
-      const rows: AssignmentRow[] = assignRes.map((rec) => {
-        const emp = users.find(u => u.id === rec.employeeId);
-        const ass = users.find(u => u.id === rec.assessorId);
-        const employeeJobAssignments = jobAssignments
-          .filter(ja => ja.employeeId === rec.employeeId)
-          .sort((a, b) => {
-            const ta = a.startDate ? new Date(a.startDate).getTime() : 0;
-            const tb = b.startDate ? new Date(b.startDate).getTime() : 0;
-            return tb - ta;
-          });
-        const jaForEmp = employeeJobAssignments[0];
-        const job = jobs.find(j => j.id === jaForEmp?.jobId);
-        return {
-          id: rec.id,
-        employeeId: rec.employeeId,
-        assessorId: rec.assessorId,
-          employeeName: `${emp?.firstName ?? ''} ${emp?.lastName ?? ''}`.trim(),
-          jobTitle: job?.title ?? '',
-          assessor: `${ass?.firstName ?? ''} ${ass?.lastName ?? ''}`.trim(),
-        };
-      });
-      setAssignments(rows);
-    } catch (err) {
-      console.error("Error fetching assignments:", err);
-      setError('Failed to load assessor assignments. Please try again later.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Filter assignments based on search term
   const filteredAssignments = assignments.filter(assignment =>
     assignment.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -187,50 +160,36 @@ export default function EmployeeAssessorAssign() {
 
     try {
       setIsSubmitting(true);
+      setFormError(null);
 
       // Validate required fields
       if (!selectedEmployee || !selectedAssessor) {
-        setError('Please select both employee and assessor');
+        setFormError('Please select both employee and assessor');
         setIsSubmitting(false);
         return;
       }
 
+      if (assignments.some(assignment => assignment.employeeId === selectedEmployee && assignment.assessorId === selectedAssessor)) {
+        setFormError('This assessor is already assigned to this employee.'); return;
+      }
       const created = await createAssessorAssignment({ assessorId: selectedAssessor, employeeId: selectedEmployee });
 
-      const emp = users.find(u => u.id === created.employeeId);
-      const ass = users.find(u => u.id === created.assessorId);
-      const employeeJobAssignments = jobAssignments
-        .filter(ja => ja.employeeId === created.employeeId)
-        .sort((a, b) => {
-          const ta = a.startDate ? new Date(a.startDate).getTime() : 0;
-          const tb = b.startDate ? new Date(b.startDate).getTime() : 0;
-          return tb - ta;
-        });
-      const jaForEmp = employeeJobAssignments[0];
-      const job = jobs.find(j => j.id === jaForEmp?.jobId);
-      const newRow: AssignmentRow = {
-        id: created.id,
-        employeeId: created.employeeId,
-        assessorId: created.assessorId,
-        employeeName: `${emp?.firstName ?? ''} ${emp?.lastName ?? ''}`.trim(),
-        jobTitle: job?.title ?? '',
-        assessor: `${ass?.firstName ?? ''} ${ass?.lastName ?? ''}`.trim(),
-      };
-
-      setAssignments([...assignments, newRow]);
+      const [newRow] = buildAssignmentRows([created], users, jobs, jobAssignments);
+      setAssignments(previous => [...previous, newRow]);
       setShowAddModal(false);
       setSelectedEmployee("");
       setSelectedAssessor("");
       setFormJobRole("");
     } catch (err) {
       console.error("Error adding assignment:", err);
-      setError('Failed to add assignment. Please try again later.');
+      setFormError(err instanceof Error ? err.message : 'Failed to add assignment.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleEdit = (assignment: AssignmentRow) => {
+    setFormError(null);
     setSelectedAssignment(assignment);
 
     setSelectedEmployee(assignment.employeeId);
@@ -248,40 +207,25 @@ export default function EmployeeAssessorAssign() {
 
     try {
       setIsSubmitting(true);
+      setFormError(null);
 
       // Validate required fields
       if (!selectedEmployee || !selectedAssessor) {
-        setError('Please select both employee and assessor');
+        setFormError('Please select both employee and assessor');
         setIsSubmitting(false);
         return;
       }
 
+      if (assignments.some(assignment => assignment.id !== selectedAssignment.id && assignment.employeeId === selectedEmployee && assignment.assessorId === selectedAssessor)) {
+        setFormError('This assessor is already assigned to this employee.'); return;
+      }
       const updated = await updateAssessorAssignment(selectedAssignment.id, {
         employeeId: selectedEmployee,
         assessorId: selectedAssessor,
       });
 
-      const emp = users.find(u => u.id === updated.employeeId);
-      const ass = users.find(u => u.id === updated.assessorId);
-      const employeeJobAssignments = jobAssignments
-        .filter(ja => ja.employeeId === updated.employeeId)
-        .sort((a, b) => {
-          const ta = a.startDate ? new Date(a.startDate).getTime() : 0;
-          const tb = b.startDate ? new Date(b.startDate).getTime() : 0;
-          return tb - ta;
-        });
-      const jaForEmp = employeeJobAssignments[0];
-      const job = jobs.find(j => j.id === jaForEmp?.jobId);
-      const updatedRow: AssignmentRow = {
-        id: updated.id,
-        employeeId: updated.employeeId,
-        assessorId: updated.assessorId,
-        employeeName: `${emp?.firstName ?? ''} ${emp?.lastName ?? ''}`.trim(),
-        jobTitle: job?.title ?? '',
-        assessor: `${ass?.firstName ?? ''} ${ass?.lastName ?? ''}`.trim(),
-      };
-
-      setAssignments(assignments.map(assignment =>
+      const [updatedRow] = buildAssignmentRows([updated], users, jobs, jobAssignments);
+      setAssignments(previous => previous.map(assignment =>
         assignment.id === selectedAssignment.id ? updatedRow : assignment
       ));
       setShowEditModal(false);
@@ -290,7 +234,7 @@ export default function EmployeeAssessorAssign() {
       setSelectedAssessor("");
     } catch (err) {
       console.error("Error updating assignment:", err);
-      setError('Failed to update assignment. Please try again later.');
+      setFormError(err instanceof Error ? err.message : 'Failed to update assignment.');
     } finally {
       setIsSubmitting(false);
     }
@@ -301,15 +245,16 @@ export default function EmployeeAssessorAssign() {
 
     try {
       setIsSubmitting(true);
+      setFormError(null);
 
       await deleteAssessorAssignment(selectedAssignment.id);
 
-      setAssignments(assignments.filter(assignment => assignment.id !== selectedAssignment.id));
+      setAssignments(previous => previous.filter(assignment => assignment.id !== selectedAssignment.id));
       setShowDeleteModal(false);
       setSelectedAssignment(null);
     } catch (err) {
       console.error("Error deleting assignment:", err);
-      setError('Failed to delete assignment. Please try again later.');
+      setFormError(err instanceof Error ? err.message : 'Failed to delete assignment.');
     } finally {
       setIsSubmitting(false);
     }
@@ -333,7 +278,8 @@ export default function EmployeeAssessorAssign() {
         </div>
         <div className="flex justify-center sm:justify-end">
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => { setFormError(null); setSelectedEmployee(""); setSelectedAssessor(""); setShowAddModal(true); }}
+            disabled={loading || !!error}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 w-full sm:w-auto"
           >
             <PlusIcon className="size-4" />
@@ -436,6 +382,7 @@ export default function EmployeeAssessorAssign() {
                             </button>
                             <button
                               onClick={() => {
+                                setFormError(null);
                                 setSelectedAssignment(assignment);
                                 setShowDeleteModal(true);
                                 setActiveDropdown(null);
@@ -485,6 +432,7 @@ export default function EmployeeAssessorAssign() {
             </p>
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-4 max-h-[70vh] overflow-y-auto pr-2 pl-1">
+              {formError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{formError}</p>}
               <div>
                 <label htmlFor="employee_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Employee
@@ -492,7 +440,7 @@ export default function EmployeeAssessorAssign() {
                 <select
                   id="employee_id"
                   value={selectedEmployee}
-                  onChange={(e) => setSelectedEmployee(e.target.value)}
+                  onChange={(e) => { setSelectedEmployee(e.target.value); setSelectedAssessor(""); }}
                   required
                   className="mt-1 block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white [&>option]:dark:bg-gray-900 [&>option]:dark:text-white"
                 >
@@ -532,14 +480,14 @@ export default function EmployeeAssessorAssign() {
                 >
                   <option value="">Select an assessor</option>
                   {assessors.map(assessor => (
-                    <option key={`assessor-${assessor.id}`} value={assessor.id}>
+                    <option key={`assessor-${assessor.id}`} value={assessor.id} disabled={assignedAssessorIds.has(assessor.id)}>
                       {(assessor.firstName ?? '')} {(assessor.lastName ?? '')} ({assessor.email})
                     </option>
                   ))}
                 </select>
                 {assessors.length === 0 && (
                   <p className="mt-1 text-xs text-red-500 dark:text-red-400">
-                    No assessors found. Please assign the assessor role to users first.
+                    No active assessors found. Invite or reactivate an assessor first.
                   </p>
                 )}
               </div>
@@ -583,6 +531,7 @@ export default function EmployeeAssessorAssign() {
             </p>
 
             <form onSubmit={handleUpdate} className="mt-6 space-y-4 max-h-[70vh] overflow-y-auto pr-2 pl-1">
+              {formError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{formError}</p>}
               <div>
                 <label htmlFor="edit_employee_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Employee
@@ -590,7 +539,7 @@ export default function EmployeeAssessorAssign() {
                 <select
                   id="edit_employee_id"
                   value={selectedEmployee}
-                  onChange={(e) => setSelectedEmployee(e.target.value)}
+                  onChange={(e) => { setSelectedEmployee(e.target.value); setSelectedAssessor(""); }}
                   required
                   className="mt-1 block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white [&>option]:dark:bg-gray-900 [&>option]:dark:text-white"
                 >
@@ -630,14 +579,14 @@ export default function EmployeeAssessorAssign() {
                 >
                   <option value="">Select an assessor</option>
                   {assessors.map(assessor => (
-                    <option key={`edit-assessor-${assessor.id}`} value={assessor.id}>
+                    <option key={`edit-assessor-${assessor.id}`} value={assessor.id} disabled={assignedAssessorIds.has(assessor.id)}>
                       {(assessor.firstName ?? '')} {(assessor.lastName ?? '')} ({assessor.email})
                     </option>
                   ))}
                 </select>
                 {assessors.length === 0 && (
                   <p className="mt-1 text-xs text-red-500 dark:text-red-400">
-                    No assessors found. Please assign the assessor role to users first.
+                    No active assessors found. Invite or reactivate an assessor first.
                   </p>
                 )}
               </div>
@@ -680,6 +629,7 @@ export default function EmployeeAssessorAssign() {
               Are you sure you want to delete this assessor assignment?
             </p>
 
+            {formError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{formError}</p>}
             <div className="mt-6 flex items-center justify-end gap-3">
               <button
                 onClick={() => setShowDeleteModal(false)}

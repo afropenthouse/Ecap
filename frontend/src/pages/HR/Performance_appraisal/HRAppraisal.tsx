@@ -3,6 +3,7 @@ import {
   listAppraisals,
   getAppraisalQuestions,
   getAppraisalResponses,
+  updateAppraisalStatus,
   type PerformanceAppraisal,
   type PerformanceAppraisalQuestion,
   type PerformanceAppraisalResponse
@@ -26,6 +27,8 @@ const HRAppraisal: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [selectedAppraisal, setSelectedAppraisal] = useState<PerformanceAppraisal | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
+  const [reviewing, setReviewing] = useState(false);
+  const [responsesLoading, setResponsesLoading] = useState(false);
 
   // Load appraisals
   const fetchAppraisals = async () => {
@@ -48,6 +51,7 @@ const HRAppraisal: React.FC = () => {
       setQuestions(data);
     } catch (err) {
       console.error('Error fetching questions:', err);
+      setError(err instanceof Error ? err.message : 'Could not load appraisal questions.');
     }
   };
 
@@ -61,12 +65,12 @@ const HRAppraisal: React.FC = () => {
       }));
     } catch (err) {
       console.error('Error fetching responses:', err);
+      setError(err instanceof Error ? err.message : 'Could not load saved appraisal answers.');
     }
   };
 
   // Filter appraisals (exclude PENDING from HR view)
   const filteredAppraisals = appraisals
-    .filter(appraisal => appraisal.status !== 'PENDING')
     .filter(appraisal => {
     const employeeName = `${appraisal.employee?.firstName || ''} ${appraisal.employee?.lastName || ''}`.toLowerCase();
     const assessorName = appraisal.assessor ? `${appraisal.assessor.firstName || ''} ${appraisal.assessor.lastName || ''}`.toLowerCase() : '';
@@ -82,11 +86,18 @@ const HRAppraisal: React.FC = () => {
 
   // Handle view appraisal details
   const handleViewAppraisal = async (appraisal: PerformanceAppraisal) => {
+    setError(null);
+    setResponsesLoading(true);
     setSelectedAppraisal(appraisal);
     setViewMode('detail');
     if (!responses[appraisal.id]) {
       await fetchResponses(appraisal.id);
     }
+    if (appraisal.type === 'ASSESSOR') {
+      const self = appraisals.find(row => row.type === 'SELF' && row.employeeId === appraisal.employeeId && Date.parse(row.createdAt) <= Date.parse(appraisal.createdAt));
+      if (self && !responses[self.id]) await fetchResponses(self.id);
+    }
+    setResponsesLoading(false);
   };
 
   // Handle back to list
@@ -95,15 +106,26 @@ const HRAppraisal: React.FC = () => {
     setViewMode('list');
   };
 
-  // Calculate average rating for an appraisal
   const calculateAverageRating = (appraisalId: string) => {
-    const appraisalResponses = responses[appraisalId] || [];
-    const ratings = appraisalResponses
-      .map(r => r.employeeRating)
-      .filter(r => r !== null && r !== undefined);
-    if (ratings.length === 0) return '0.0';
-    return (ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(1);
+    const appraisal = appraisals.find(item => item.id === appraisalId);
+    if (appraisal?.averageRating != null) return appraisal.averageRating.toFixed(1);
+    const ratings = (responses[appraisalId] || []).map(response => appraisal?.type === 'ASSESSOR' ? response.assessorRating : response.employeeRating).filter((rating): rating is number => rating != null);
+    return ratings.length ? (ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(1) : '-';
   };
+
+  const markReviewed = async () => {
+    if (!selectedAppraisal || reviewing) return;
+    setReviewing(true); setError(null);
+    try {
+      const updated = await updateAppraisalStatus(selectedAppraisal.id, 'REVIEWED');
+      setSelectedAppraisal(previous => previous ? { ...previous, ...updated } : updated);
+      setAppraisals(previous => previous.map(row => row.id === updated.id ? { ...row, ...updated } : row));
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not mark appraisal reviewed.'); }
+    finally { setReviewing(false); }
+  };
+
+  const selectedSelfAppraisal = selectedAppraisal?.type === 'ASSESSOR'
+    ? appraisals.find(row => row.type === 'SELF' && row.employeeId === selectedAppraisal.employeeId && Date.parse(row.createdAt) <= Date.parse(selectedAppraisal.createdAt)) : selectedAppraisal;
 
   // Load data on component mount
   useEffect(() => {
@@ -120,6 +142,8 @@ const HRAppraisal: React.FC = () => {
         </h2>
       </div>
 
+      {error && viewMode === 'detail' && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
+      {responsesLoading && <p role="status" className="text-sm text-gray-500">Loading saved answers...</p>}
       {viewMode === 'list' ? (
         <>
           {/* Filters */}
@@ -160,7 +184,7 @@ const HRAppraisal: React.FC = () => {
 
               <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
                 <FunnelIcon className="w-4 h-4 mr-2" />
-                  {filteredAppraisals.length} of {appraisals.filter(a => a.type === 'SELF').length} self appraisals
+                  {filteredAppraisals.length} of {appraisals.length} appraisals
               </div>
             </div>
           </div>
@@ -268,6 +292,7 @@ const HRAppraisal: React.FC = () => {
                 ← Back to list
               </button>
               <div className="text-right">
+                {selectedAppraisal.status === 'COMPLETED' && <button type="button" disabled={reviewing || responsesLoading || !!error} onClick={() => void markReviewed()} className="mr-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{reviewing ? 'Saving...' : 'Mark reviewed'}</button>}
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                   selectedAppraisal.status === 'COMPLETED' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                   selectedAppraisal.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
@@ -338,7 +363,7 @@ const HRAppraisal: React.FC = () => {
                                 <div
                                   key={rating}
                                   className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
-                                    response?.employeeRating === rating
+                                    (response?.employeeRating ?? responses[selectedSelfAppraisal?.id || ""]?.find(item => item.questionId === question.id)?.employeeRating) === rating
                                       ? 'bg-blue-600 text-white'
                                       : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400'
                                   }`}
@@ -374,7 +399,7 @@ const HRAppraisal: React.FC = () => {
                         <div className="mt-4 flex items-center space-x-6">
                           <div>
                             <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Employee Rating (number)</h5>
-                            <p className="text-sm text-gray-900 dark:text-white">{response?.employeeRating ?? '—'}</p>
+                            <p className="text-sm text-gray-900 dark:text-white">{response?.employeeRating ?? responses[selectedSelfAppraisal?.id || ""]?.find(item => item.questionId === question.id)?.employeeRating ?? '—'}</p>
                           </div>
 
                           {selectedAppraisal.type === 'ASSESSOR' && (

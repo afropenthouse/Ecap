@@ -207,7 +207,6 @@ export default function Login() {
 
         {passwordChangeOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="presentation">
           <section role="dialog" aria-modal="true" aria-labelledby="activate-title" className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900">
-            <div className="mb-5 flex size-12 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" aria-hidden="true">âœ“</div>
             <h2 id="activate-title" className="text-xl font-bold text-gray-900 dark:text-white">Activate your account</h2>
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Create a personal password to replace the temporary password from your invitation.</p>
             {error && <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">{error}</p>}

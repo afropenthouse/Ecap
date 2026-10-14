@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   listAppraisals,
   getAppraisalQuestions,
@@ -29,6 +29,11 @@ const EmployeeAppraisal: React.FC = () => {
   const [currentAppraisal, setCurrentAppraisal] = useState<PerformanceAppraisal | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingSaves, setPendingSaves] = useState(0);
+  const [answersLoading, setAnswersLoading] = useState(false);
+  const [answersError, setAnswersError] = useState(false);
+  const saveQueues = useRef(new Map<string, Promise<void>>());
+  const savedResponses = useRef(new Map<string, PerformanceAppraisalResponse>());
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
@@ -60,12 +65,7 @@ const EmployeeAppraisal: React.FC = () => {
         || data.find(a => a.type === 'SELF' && a.status === 'PENDING');
       setCurrentAppraisal(active || null);
       if (active?.status === 'IN_PROGRESS') {
-        getAppraisalResponses(active.id)
-          .then(setResponses)
-          .catch(err => {
-            console.error('Error fetching appraisal responses:', err);
-            setError('Failed to load saved answers. Please retry.');
-          });
+        void fetchResponses(active.id);
       }
     } catch (err) {
       console.error('Error fetching appraisal page data:', err);
@@ -77,13 +77,16 @@ const EmployeeAppraisal: React.FC = () => {
 
   // Load responses for current appraisal
   const fetchResponses = async (appraisalId: string) => {
+    setResponses([]); setAnswersLoading(true); setAnswersError(false);
     try {
       const data = await getAppraisalResponses(appraisalId);
       setResponses(data);
+      savedResponses.current = new Map(data.map(response => [`${appraisalId}:${response.questionId}`, response]));
     } catch (err) {
       console.error('Error fetching responses:', err);
-      setError('Failed to load responses');
-    }
+      setAnswersError(true);
+      setError(err instanceof Error ? err.message : 'Failed to load responses');
+    } finally { setAnswersLoading(false); }
   };
 
   // Create new appraisal
@@ -123,7 +126,7 @@ const EmployeeAppraisal: React.FC = () => {
 
   // Complete appraisal
   const handleCompleteAppraisal = async () => {
-    if (!currentAppraisal) return;
+    if (!currentAppraisal || pendingSaves > 0 || saveQueues.current.size > 0 || answersLoading || answersError) return;
 
     try {
       setSubmitting(true);
@@ -138,48 +141,42 @@ const EmployeeAppraisal: React.FC = () => {
       openModal();
     } catch (err) {
       console.error('Error completing appraisal:', err);
-      setError('Failed to complete appraisal');
+      setError(err instanceof Error ? err.message : 'Failed to complete appraisal');
       setSubmitting(false);
     }
   };
 
   // Save response
   const handleSaveResponse = async (questionId: string, rating: number, comment: string) => {
-    if (!currentAppraisal) return;
-    const previousResponses = responses;
-    const previous = previousResponses.find(r => r.questionId === questionId);
+    if (!currentAppraisal || answersLoading || answersError) return;
+    const appraisalId = currentAppraisal.id;
+    const key = appraisalId + ':' + questionId;
     const optimistic: PerformanceAppraisalResponse = {
-      id: previous?.id || `pending-${questionId}`,
-      organizationId: currentAppraisal.organizationId,
-      appraisalId: currentAppraisal.id,
-      questionId,
-      employeeRating: rating,
-      employeeComment: comment || null,
+      id: responses.find(response => response.questionId === questionId)?.id || 'pending-' + questionId,
+      organizationId: currentAppraisal.organizationId, appraisalId, questionId,
+      employeeRating: rating, employeeComment: comment || null,
     };
-    // Show the selected rating immediately; persist it in the background.
-    setResponses(previous ? previousResponses.map(r => r.questionId === questionId ? optimistic : r) : [...previousResponses, optimistic]);
+    setResponses(previous => previous.some(response => response.questionId === questionId)
+      ? previous.map(response => response.questionId === questionId ? optimistic : response) : [...previous, optimistic]);
+    setPendingSaves(count => count + 1); setError(null); setSuccess('Saving your answer...');
+    const queuedSave = (saveQueues.current.get(key) || Promise.resolve()).catch(() => undefined).then(async () => {
+      const saved = await saveAppraisalResponse(appraisalId, questionId, rating, comment);
+      savedResponses.current.set(key, saved);
+      if (saveQueues.current.get(key) === queuedSave) setResponses(previous => previous.map(response => response.questionId === questionId ? saved : response));
+    });
+    saveQueues.current.set(key, queuedSave);
     try {
-      setSubmitting(true);
-      setSuccess('Saving your answer…');
-      const saved = await saveAppraisalResponse(currentAppraisal.id, questionId, rating, comment);
-      
-      // Update responses state
-      setResponses(prev => {
-        const existing = prev.find(r => r.questionId === questionId);
-        if (existing) {
-          return prev.map(r => r.questionId === questionId ? saved : r);
-        } else {
-          return [...prev, saved];
-        }
-      });
-      
-      setSubmitting(false);
+      await queuedSave;
+      if (saveQueues.current.get(key) === queuedSave) setSuccess('Answer saved');
     } catch (err) {
-      console.error('Error saving response:', err);
-      setResponses(previousResponses);
-      setSuccess(null);
-      setError('Failed to save response');
-      setSubmitting(false);
+      if (saveQueues.current.get(key) === queuedSave) {
+        const confirmed = savedResponses.current.get(key);
+        setResponses(previous => confirmed ? previous.map(response => response.questionId === questionId ? confirmed : response) : previous.filter(response => response.questionId !== questionId));
+        setSuccess(null); setError(err instanceof Error ? err.message : 'Failed to save response. Please retry.');
+      }
+    } finally {
+      if (saveQueues.current.get(key) === queuedSave) saveQueues.current.delete(key);
+      setPendingSaves(count => Math.max(0, count - 1));
     }
   };
 
@@ -191,13 +188,13 @@ const EmployeeAppraisal: React.FC = () => {
   // Calculate completion percentage
   const calculateCompletion = () => {
     if (!questions.length) return 0;
-    const answeredQuestions = responses.filter(r => r.employeeRating !== null && r.employeeRating !== undefined);
+    const answeredQuestions = responses.filter(r => questions.some(question => question.id === r.questionId) && r.employeeRating != null);
     return Math.round((answeredQuestions.length / questions.length) * 100);
   };
 
   const activeQuestion = questions[activeQuestionIndex];
-  const isReadOnly = currentAppraisal?.status === 'COMPLETED' || currentAppraisal?.status === 'REVIEWED';
-  const answeredCount = responses.filter(r => r.employeeRating !== null && r.employeeRating !== undefined).length;
+  const isReadOnly = answersLoading || answersError || currentAppraisal?.status === 'COMPLETED' || currentAppraisal?.status === 'REVIEWED';
+  const answeredCount = responses.filter(r => questions.some(question => question.id === r.questionId) && r.employeeRating != null).length;
   useEffect(() => {
     setCommentDraft(activeQuestion ? (getResponse(activeQuestion.id)?.employeeComment || '') : '');
   }, [activeQuestionIndex, responses, currentAppraisal?.id]);
@@ -288,13 +285,16 @@ const EmployeeAppraisal: React.FC = () => {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                            {appraisal.createdAt ? new Date(appraisal.createdAt).toLocaleDateString() : '-'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                             {appraisal.completedAt ? new Date(appraisal.completedAt).toLocaleDateString() : '-'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             {appraisal.status === 'PENDING' && (
                               <button
                                 onClick={() => handleStartAppraisal(appraisal)}
-                                disabled={submitting}
+                                disabled={submitting || pendingSaves > 0}
                                 className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4"
                               >
                                 Start
@@ -302,7 +302,8 @@ const EmployeeAppraisal: React.FC = () => {
                             )}
                             {appraisal.status === 'IN_PROGRESS' && (
                               <button
-                                onClick={() => setCurrentAppraisal(appraisal)}
+                                onClick={() => { setCurrentAppraisal(appraisal); setActiveQuestionIndex(0); void fetchResponses(appraisal.id); }}
+                                disabled={submitting || pendingSaves > 0}
                                 className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4"
                               >
                                 Continue
@@ -404,7 +405,7 @@ const EmployeeAppraisal: React.FC = () => {
                         <div className="text-center py-8">
                           <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Ready when you are</h4>
                           <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Start your appraisal to save your answers as you go.</p>
-                          <button onClick={() => handleStartAppraisal(currentAppraisal)} disabled={submitting} className="mt-5 rounded-lg bg-blue-600 px-5 py-2.5 font-medium text-white hover:bg-blue-700 disabled:opacity-50">Start appraisal</button>
+                          <button onClick={() => handleStartAppraisal(currentAppraisal)} disabled={submitting || pendingSaves > 0} className="mt-5 rounded-lg bg-blue-600 px-5 py-2.5 font-medium text-white hover:bg-blue-700 disabled:opacity-50">Start appraisal</button>
                         </div>
                       ) : activeQuestion ? (() => {
                         const question = activeQuestion;
@@ -440,7 +441,7 @@ const EmployeeAppraisal: React.FC = () => {
                                   <button
                                     key={rating}
                                     type="button"
-                                    disabled={isReadOnly || submitting}
+                                    disabled={isReadOnly || submitting || pendingSaves > 0}
                                     onClick={() => { if (!isReadOnly && !submitting) void handleSaveResponse(question.id, rating, commentDraft); }}
                                     className={`min-h-16 rounded-lg flex flex-col items-center justify-center text-sm font-semibold transition-all ${
                                       response?.employeeRating === rating
@@ -454,15 +455,15 @@ const EmployeeAppraisal: React.FC = () => {
                               </div>
                             </div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Your reflection <span className="font-normal text-gray-500">(optional)</span>
-                              <textarea value={commentDraft} onChange={e => setCommentDraft(e.target.value)} onBlur={() => { if (response?.employeeRating && !isReadOnly) void handleSaveResponse(question.id, response.employeeRating, commentDraft); }} disabled={isReadOnly || submitting} maxLength={2000} rows={3} placeholder="Add an example or context for your rating…" className="mt-2 w-full rounded-lg border border-gray-300 bg-white p-3 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white disabled:opacity-70" />
+                              <textarea value={commentDraft} onChange={e => setCommentDraft(e.target.value)} onBlur={() => { if (response?.employeeRating && !isReadOnly) void handleSaveResponse(question.id, response.employeeRating, commentDraft); }} disabled={isReadOnly || submitting || pendingSaves > 0} maxLength={2000} rows={3} placeholder="Add an example or context for your rating…" className="mt-2 w-full rounded-lg border border-gray-300 bg-white p-3 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white disabled:opacity-70" />
                             </label>
                             <div className="mt-6 flex justify-between">
-                              <button type="button" onClick={() => setActiveQuestionIndex(i => Math.max(0, i - 1))} disabled={activeQuestionIndex === 0} className="rounded-lg border px-4 py-2 text-sm disabled:opacity-40 dark:border-gray-600 dark:text-white">Previous</button>
+                              <button type="button" onClick={() => setActiveQuestionIndex(i => Math.max(0, i - 1))} disabled={activeQuestionIndex === 0 || pendingSaves > 0 || submitting} className="rounded-lg border px-4 py-2 text-sm disabled:opacity-40 dark:border-gray-600 dark:text-white">Previous</button>
                               {activeQuestionIndex < questions.length - 1 ? <button type="button" onClick={() => setActiveQuestionIndex(i => i + 1)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">Next question</button> : null}
                             </div>
                           </div>
-                          <nav aria-label="Appraisal questions" className="mt-4 flex flex-wrap gap-2">{questions.map((q, index) => <button key={q.id} type="button" aria-label={`Go to question ${index + 1}`} onClick={() => setActiveQuestionIndex(index)} className={`h-9 w-9 rounded-full text-xs font-medium ${index === activeQuestionIndex ? 'bg-blue-600 text-white' : getResponse(q.id)?.employeeRating ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>{index + 1}</button>)}</nav>
-                          {!isReadOnly && <div className="mt-6 text-center"><button onClick={handleCompleteAppraisal} disabled={submitting || calculateCompletion() < 100} className="rounded-lg bg-green-600 px-6 py-3 font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"><CheckCircleIcon className="mr-2 inline h-5 w-5" />Submit appraisal</button>{calculateCompletion() < 100 && <p className="mt-2 text-xs text-gray-500">Answer all {questions.length} questions to submit.</p>}</div>}
+                          <nav aria-label="Appraisal questions" className="mt-4 flex flex-wrap gap-2">{questions.map((q, index) => <button key={q.id} type="button" aria-label={`Go to question ${index + 1}`} disabled={pendingSaves > 0 || submitting} onClick={() => setActiveQuestionIndex(index)} className={`h-9 w-9 rounded-full text-xs font-medium ${index === activeQuestionIndex ? 'bg-blue-600 text-white' : getResponse(q.id)?.employeeRating ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>{index + 1}</button>)}</nav>
+                          {!isReadOnly && <div className="mt-6 text-center"><button onClick={handleCompleteAppraisal} disabled={submitting || pendingSaves > 0 || answersLoading || answersError || !questions.length || calculateCompletion() < 100} className="rounded-lg bg-green-600 px-6 py-3 font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"><CheckCircleIcon className="mr-2 inline h-5 w-5" />Submit appraisal</button>{calculateCompletion() < 100 && <p className="mt-2 text-xs text-gray-500">Answer all {questions.length} questions to submit.</p>}</div>}
                         </div>;
                       })() : null}
 

@@ -12,7 +12,7 @@ async function getRequiredCompetencyIds(organizationId: string, employeeId: stri
       employeeId,
       OR: [{ startDate: null }, { startDate: { lte: new Date() } }],
     },
-    orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+    orderBy: [{ startDate: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
     include: { job: { include: { requirements: true } } },
   });
   return assignment?.job.requirements.map(requirement => requirement.competencyId) || [];
@@ -68,7 +68,7 @@ router.post('/self', authMiddleware, rbac(['EMPLOYEE']), async (req: Request, re
 router.post('/assessor', authMiddleware, rbac(['ASSESSOR']), async (req: Request, res: Response) => {
   try {
     const { employeeId } = req.body as { employeeId: string };
-    if (!employeeId) return res.status(400).json({ error: 'employeeId is required.' });
+    if (typeof employeeId !== 'string' || !employeeId.trim()) return res.status(400).json({ error: 'employeeId is required.' });
     const organizationId = req.user!.organizationId;
     const [employee, assignment] = await Promise.all([
       prisma.user.findFirst({ where: { id: employeeId, organizationId, role: 'EMPLOYEE' } }),
@@ -76,7 +76,9 @@ router.post('/assessor', authMiddleware, rbac(['ASSESSOR']), async (req: Request
     ]);
     if (!employee) return res.status(404).json({ error: 'Employee not found in this organisation.' });
     if (!assignment) return res.status(403).json({ error: 'You are not assigned to assess this employee.' });
-    const existing = await prisma.assessment.findFirst({ where: { organizationId, employeeId, assessorId: req.user!.id, type: 'ASSESSOR' } });
+    const selfAssessment = await prisma.assessment.findFirst({ where: { organizationId, employeeId, type: 'SELF', status: { in: [...completedStatuses] } }, orderBy: { createdAt: 'desc' } });
+    if (!selfAssessment) return res.status(409).json({ error: 'The employee must submit their self-assessment first.' });
+    const existing = await prisma.assessment.findFirst({ where: { organizationId, employeeId, assessorId: req.user!.id, type: 'ASSESSOR', createdAt: { gte: selfAssessment.createdAt } } });
     if (existing) return res.json(existing);
     const created = await prisma.assessment.create({
       data: { organizationId, type: 'ASSESSOR', status: 'PENDING', employeeId, assessorId: req.user!.id },
@@ -109,6 +111,7 @@ router.put('/:id/status', authMiddleware, async (req: Request, res: Response) =>
     if (assessment.status === 'COMPLETED' || assessment.status === 'REVIEWED') return res.status(409).json({ error: 'This assessment is already complete and cannot be changed.' });
 
     const requiredCompetencyIds = await getAssessmentCompetencyIds(req.user!.organizationId, assessment.employeeId);
+    if ((status === 'COMPLETED' || status === 'REVIEWED') && requiredCompetencyIds.length === 0) return res.status(409).json({ error: 'Configure competencies before completing this assessment.' });
     if ((status === 'COMPLETED' || status === 'REVIEWED') && !(await hasAllRequiredRatings(assessment.id, requiredCompetencyIds))) {
       return res.status(409).json({ error: 'Rate every competency in this assessment before completing it.' });
     }
@@ -127,7 +130,7 @@ router.put('/:id/status', authMiddleware, async (req: Request, res: Response) =>
       if (assessment.type === 'SELF' && status === 'COMPLETED') {
         const assignments = await tx.assessorAssignment.findMany({ where: { organizationId: assessment.organizationId, employeeId: assessment.employeeId } });
         for (const assignment of assignments) {
-          const existing = await tx.assessment.findFirst({ where: { organizationId: assessment.organizationId, type: 'ASSESSOR', employeeId: assessment.employeeId, assessorId: assignment.assessorId } });
+          const existing = await tx.assessment.findFirst({ where: { organizationId: assessment.organizationId, type: 'ASSESSOR', employeeId: assessment.employeeId, assessorId: assignment.assessorId, createdAt: { gte: assessment.createdAt } } });
           if (!existing) {
             await tx.assessment.create({
               data: { organizationId: assessment.organizationId, type: 'ASSESSOR', status: 'PENDING', employeeId: assessment.employeeId, assessorId: assignment.assessorId },
@@ -159,7 +162,8 @@ router.post('/:id/ratings', authMiddleware, async (req: Request, res: Response) 
       if (!assignment) return res.status(403).json({ error: 'You are no longer assigned to this employee; this assessment is view-only.' });
     }
     if (!['PENDING', 'IN_PROGRESS'].includes(assessment.status)) return res.status(409).json({ error: 'This assessment is no longer open for ratings.' });
-    if (!competencyId || !Number.isInteger(rating)) return res.status(400).json({ error: 'A competency and whole-number proficiency rating are required.' });
+    if (typeof competencyId !== 'string' || !competencyId.trim() || !Number.isInteger(rating)) return res.status(400).json({ error: 'A competency and whole-number proficiency rating are required.' });
+    if (comment !== undefined && (typeof comment !== 'string' || comment.length > 2000)) return res.status(400).json({ error: 'Comments must be text with 2,000 characters or fewer.' });
 
     const [level, competencyIds] = await Promise.all([
       prisma.proficiencyLevel.findFirst({ where: { organizationId: req.user!.organizationId, levelNumber: rating } }),
@@ -171,10 +175,11 @@ router.post('/:id/ratings', authMiddleware, async (req: Request, res: Response) 
     }
     if (!competencyIds.includes(competencyId)) return res.status(400).json({ error: 'This competency is not required by the employee’s current job profile.' });
 
-    const existingRating = await prisma.assessmentRating.findFirst({ where: { organizationId: req.user!.organizationId, assessmentId: id, competencyId } });
-    const saved = existingRating
-      ? await prisma.assessmentRating.update({ where: { id: existingRating.id }, data: { rating, comment } })
-      : await prisma.assessmentRating.create({ data: { organizationId: req.user!.organizationId, assessmentId: id, competencyId, rating, comment } });
+    const saved = await prisma.assessmentRating.upsert({
+      where: { organizationId_assessmentId_competencyId: { organizationId: req.user!.organizationId, assessmentId: id, competencyId } },
+      update: { rating, comment },
+      create: { organizationId: req.user!.organizationId, assessmentId: id, competencyId, rating, comment },
+    });
     res.status(200).json(saved);
   } catch (e) {
     console.error(e);
@@ -196,7 +201,7 @@ router.post('/consensus/:employeeId', authMiddleware, rbac(['HR']), async (req: 
     if (assignments.length === 0) return res.status(409).json({ error: 'No assessors are assigned to this employee.' });
 
     const assessorAssessments = await prisma.assessment.findMany({
-      where: { organizationId, employeeId, type: 'ASSESSOR', assessorId: { in: assignments.map(assignment => assignment.assessorId) } },
+      where: { organizationId, employeeId, type: 'ASSESSOR', createdAt: { gte: selfAssessment.createdAt }, assessorId: { in: assignments.map(assignment => assignment.assessorId) } },
       include: { ratings: true },
       orderBy: { createdAt: 'desc' },
     });

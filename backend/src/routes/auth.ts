@@ -151,6 +151,48 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
+// Account settings are available to every authenticated role. Email and role
+// are deliberately excluded from the update data.
+router.put('/me', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { firstName, lastName } = req.body;
+    if (typeof firstName !== 'string' || typeof lastName !== 'string' || !firstName.trim() || !lastName.trim() || firstName.trim().length > 100 || lastName.trim().length > 100) {
+      return res.status(400).json({ error: 'First and last names are required and must be at most 100 characters each' });
+    }
+    const user = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { firstName: firstName.trim(), lastName: lastName.trim() },
+      select: { id: true, email: true, role: true, organizationId: true, firstName: true, lastName: true },
+    });
+    return res.json(user);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+router.post('/change-password', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (typeof currentPassword !== 'string' || !currentPassword || typeof newPassword !== 'string' || !isStrongPassword(newPassword)) {
+      return res.status(400).json({ error: 'Enter your current password and a new password with at least 8 characters, uppercase and lowercase letters, a number, and a symbol' });
+    }
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!await verifyPassword(currentPassword, user.passwordHash)) return res.status(400).json({ error: 'Current password is incorrect' });
+    if (currentPassword === newPassword) return res.status(400).json({ error: 'Choose a different new password' });
+    const passwordHash = await hashPassword(newPassword);
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: user.id }, data: { passwordHash } }),
+      prisma.passwordResetToken.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } }),
+    ]);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
 router.post('/forgot-password', async (req: Request, res: Response) => {
   try {
     const { email } = req.body as { email: string };

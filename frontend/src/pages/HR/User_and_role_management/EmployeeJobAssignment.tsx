@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   UserIcon,
   PlusIcon,
@@ -38,6 +38,14 @@ type JobAssignmentRow = {
   jobId: string;
 };
 
+function assignmentRow(rec: EmployeeJobAssignmentRec, users: UserSummary[], jobs: Job[]): JobAssignmentRow {
+  const user = rec.employee || users.find(user => user.id === rec.employeeId);
+  const job = rec.job || jobs.find(job => job.id === rec.jobId);
+  return { id: rec.id, employeeId: rec.employeeId, jobId: rec.jobId,
+    employeeName: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'Unknown employee',
+    jobTitle: job?.title || rec.jobId, startDateRaw: rec.startDate || undefined };
+}
+
 export default function EmployeeJobAssignment() {
   // Using JobAssignmentRow type defined above
   const [assignments, setAssignments] = useState<JobAssignmentRow[]>([]);
@@ -45,6 +53,7 @@ export default function EmployeeJobAssignment() {
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -60,6 +69,10 @@ export default function EmployeeJobAssignment() {
     job_id: "",
     start_date: new Date().toISOString().split("T")[0],
   });
+
+  const assignedJobIds = useMemo(() => new Set(assignments
+    .filter(assignment => assignment.employeeId === formData.employee_id && (!showEditModal || assignment.id !== selectedAssignment?.id))
+    .map(assignment => assignment.jobId)), [assignments, formData.employee_id, showEditModal, selectedAssignment?.id]);
 
   // Loading state for actions
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -116,7 +129,7 @@ export default function EmployeeJobAssignment() {
       });
 
       setAssignments(rows);
-      setUsers(employeeUsers);
+      setUsers(employeeUsers.filter(user => user.isActive !== false));
       setJobs(jobRecs);
     } catch (err) {
       console.error('Error fetching assignments:', err);
@@ -137,18 +150,20 @@ export default function EmployeeJobAssignment() {
 
     try {
       setIsSubmitting(true);
+      setFormError(null);
 
       if (!formData.employee_id || !formData.job_id) {
         throw new Error("Please select both employee and job role");
       }
 
-      await createEmployeeJobAssignment({
+      if (assignedJobIds.has(formData.job_id)) throw new Error('This job role is already assigned to this employee.');
+      const created = await createEmployeeJobAssignment({
         employeeId: formData.employee_id,
         jobId: formData.job_id,
         startDate: formData.start_date,
       });
 
-      await fetchAssignments();
+      setAssignments(previous => [assignmentRow(created, users, jobs), ...previous]);
       setShowAddModal(false);
       setFormData({
         employee_id: "",
@@ -157,18 +172,19 @@ export default function EmployeeJobAssignment() {
       });
     } catch (err: any) {
       console.error("Error adding assignment:", err);
-      setError(err.message || 'Failed to add assignment. Please try again later.');
+      setFormError(err.message || 'Failed to add assignment. Please try again later.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleEdit = (assignment: JobAssignmentRow) => {
+    setFormError(null);
     setSelectedAssignment(assignment);
     setFormData({
       employee_id: assignment.employeeId || "",
       job_id: assignment.jobId || "",
-      start_date: (assignment.startDateRaw && assignment.startDateRaw.split('T')[0]) || new Date().toISOString().split("T")[0],
+      start_date: (assignment.startDateRaw && assignment.startDateRaw.split('T')[0]) || '',
     });
     setShowEditModal(true);
     setActiveDropdown(null);
@@ -181,11 +197,14 @@ export default function EmployeeJobAssignment() {
 
     try {
       setIsSubmitting(true);
+      setFormError(null);
 
-      await updateEmployeeJobAssignment(selectedAssignment.id, {
+      if (!formData.employee_id || !formData.job_id) throw new Error('Please select both employee and job role');
+      if (assignedJobIds.has(formData.job_id)) throw new Error('This job role is already assigned to this employee.');
+      const updated = await updateEmployeeJobAssignment(selectedAssignment.id, {
         employeeId: formData.employee_id || undefined,
         jobId: formData.job_id || undefined,
-        startDate: formData.start_date || undefined,
+        startDate: formData.start_date || null,
       });
 
       await fetchAssignments();
@@ -193,7 +212,7 @@ export default function EmployeeJobAssignment() {
       setSelectedAssignment(null);
     } catch (err: any) {
       console.error("Error updating assignment:", err);
-      setError(err.message || 'Failed to update assignment. Please try again later.');
+      setFormError(err.message || 'Failed to update assignment. Please try again later.');
     } finally {
       setIsSubmitting(false);
     }
@@ -204,6 +223,7 @@ export default function EmployeeJobAssignment() {
 
     try {
       setIsSubmitting(true);
+      setFormError(null);
 
       await deleteEmployeeJobAssignment(selectedAssignment.id);
 
@@ -212,7 +232,7 @@ export default function EmployeeJobAssignment() {
       setSelectedAssignment(null);
     } catch (err: any) {
       console.error("Error deleting assignment:", err);
-      setError(err.message || 'Failed to delete assignment. Please try again later.');
+      setFormError(err.message || 'Failed to delete assignment. Please try again later.');
     } finally {
       setIsSubmitting(false);
     }
@@ -236,7 +256,8 @@ export default function EmployeeJobAssignment() {
         </div>
         <div className="flex justify-center sm:justify-end">
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => { setFormError(null); setFormData({ employee_id: '', job_id: '', start_date: new Date().toISOString().split('T')[0] }); setShowAddModal(true); }}
+            disabled={loading || !!error}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 w-full sm:w-auto"
           >
             <PlusIcon className="size-0" />
@@ -342,6 +363,7 @@ export default function EmployeeJobAssignment() {
                             <button
                               onClick={() => {
                                 setSelectedAssignment(assignment);
+                                setFormError(null);
                                 setShowDeleteModal(true);
                                 setActiveDropdown(null);
                               }}
@@ -371,7 +393,8 @@ export default function EmployeeJobAssignment() {
             {searchTerm ? 'Try adjusting your search' : 'Create your first job assignment'}
           </p>
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => { setFormError(null); setFormData({ employee_id: '', job_id: '', start_date: new Date().toISOString().split('T')[0] }); setShowAddModal(true); }}
+            disabled={loading || !!error}
             className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
           >
             <PlusIcon className="size-0" />
@@ -390,6 +413,7 @@ export default function EmployeeJobAssignment() {
             </p>
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-4 max-h-[70vh] overflow-y-auto pr-2 pl-1">
+              {formError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{formError}</p>}
               <div>
                 <label htmlFor="employee_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Select Employee
@@ -397,7 +421,7 @@ export default function EmployeeJobAssignment() {
                 <select
                   id="employee_id"
                   value={formData.employee_id}
-                  onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, employee_id: e.target.value, job_id: "" })}
                   required
                   className="mt-1 block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white [&>option]:dark:bg-gray-900 [&>option]:dark:text-white"
                 >
@@ -423,7 +447,7 @@ export default function EmployeeJobAssignment() {
                 >
                   <option value="">Select a job role</option>
                   {jobs.map(job => (
-                    <option key={`job-${job.id}`} value={job.id}>{job.title}</option>
+                    <option key={`job-${job.id}`} value={job.id} disabled={assignedJobIds.has(job.id)}>{job.title}{assignedJobIds.has(job.id) ? ' (already assigned)' : ''}</option>
                   ))}
                 </select>
               </div>
@@ -437,9 +461,9 @@ export default function EmployeeJobAssignment() {
                   id="start_date"
                   value={formData.start_date}
                   onChange={(e) => setFormData({...formData, start_date: e.target.value})}
-                  required
                   className="mt-1 block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white [&>option]:dark:bg-gray-900 [&>option]:dark:text-white"
                 />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Leave blank for an assignment without a start date. Future dates take effect on that date.</p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4">
@@ -481,6 +505,7 @@ export default function EmployeeJobAssignment() {
             </p>
 
             <form onSubmit={handleUpdate} className="mt-6 space-y-4 max-h-[70vh] overflow-y-auto pr-2 pl-1">
+              {formError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{formError}</p>}
               <div>
                 <label htmlFor="edit_employee_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Select Employee
@@ -488,7 +513,7 @@ export default function EmployeeJobAssignment() {
                 <select
                   id="edit_employee_id"
                   value={formData.employee_id}
-                  onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, employee_id: e.target.value, job_id: "" })}
                   required
                   className="mt-1 block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white [&>option]:dark:bg-gray-900 [&>option]:dark:text-white"
                 >
@@ -514,7 +539,7 @@ export default function EmployeeJobAssignment() {
                 >
                   <option value="">Select a job role</option>
                   {jobs.map(job => (
-                    <option key={`job-${job.id}`} value={job.id}>{job.title}</option>
+                    <option key={`job-${job.id}`} value={job.id} disabled={assignedJobIds.has(job.id)}>{job.title}{assignedJobIds.has(job.id) ? ' (already assigned)' : ''}</option>
                   ))}
                 </select>
               </div>
@@ -528,9 +553,9 @@ export default function EmployeeJobAssignment() {
                   id="edit_start_date"
                   value={formData.start_date}
                   onChange={(e) => setFormData({...formData, start_date: e.target.value})}
-                  required
                   className="mt-1 block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white [&>option]:dark:bg-gray-900 [&>option]:dark:text-white"
                 />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Leave blank for an assignment without a start date. Future dates take effect on that date.</p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4">
@@ -571,6 +596,7 @@ export default function EmployeeJobAssignment() {
               Are you sure you want to delete this job assignment?
             </p>
 
+            {formError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{formError}</p>}
             <div className="mt-6 flex items-center justify-end gap-3">
               <button
                 onClick={() => setShowDeleteModal(false)}

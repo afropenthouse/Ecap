@@ -1,14 +1,35 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { authMiddleware, rbac } from '../middleware/auth';
+import { validateBody } from '../utils/validateBody';
+import { generatedJob, realJobFilter } from '../utils/talentInsights';
 
 const router = Router();
+
+// Remove only entries with the exact marker used by the old department workflow.
+router.delete('/generated', authMiddleware, rbac(['HR']), async (req: Request, res: Response) => {
+  try {
+    const result = await prisma.$transaction(async tx => {
+      const where = { organizationId: req.user!.organizationId, ...generatedJob };
+      const jobs = await tx.job.findMany({ where, select: { id: true } });
+      const jobIds = jobs.map(job => job.id);
+      const assignments = await tx.employeeJobAssignment.deleteMany({ where: { organizationId: req.user!.organizationId, jobId: { in: jobIds } } });
+      await tx.jobCompetency.deleteMany({ where: { organizationId: req.user!.organizationId, jobId: { in: jobIds } } });
+      const removed = await tx.job.deleteMany({ where: { ...where, id: { in: jobIds } } });
+      return { jobsRemoved: removed.count, assignmentsRemoved: assignments.count };
+    });
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to remove generated jobs.' });
+  }
+});
 
 // List jobs (all roles) scoped to organization
 router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const jobs = await prisma.job.findMany({
-      where: { organizationId: req.user!.organizationId },
+      where: { organizationId: req.user!.organizationId, ...(req.user!.role === 'HR' && req.query.includeGenerated === 'true' ? {} : realJobFilter) },
       include: { department: true, requirements: true },
     });
     res.json(jobs);
@@ -19,7 +40,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // Create job (HR & Assessor)
-router.post('/', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
+router.post('/', authMiddleware, rbac(['HR', 'ASSESSOR']), validateBody({ title: { kind: 'text', required: true }, description: { kind: 'text', allowBlank: true, nullable: true }, departmentId: { kind: 'text', allowBlank: true, nullable: true } }), async (req: Request, res: Response) => {
   try {
     const { title, description, departmentId } = req.body as { title: string; description?: string; departmentId?: string | null };
     if (!title?.trim()) return res.status(400).json({ error: 'Job title is required.' });
@@ -38,7 +59,7 @@ router.post('/', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, 
 });
 
 // Update job (HR & Assessor) with org scoping
-router.put('/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
+router.put('/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), validateBody({ title: { kind: 'text', required: true }, description: { kind: 'text', allowBlank: true, nullable: true }, departmentId: { kind: 'text', allowBlank: true, nullable: true } }), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { title, description, departmentId } = req.body as { title?: string; description?: string; departmentId?: string | null };
@@ -85,7 +106,7 @@ router.delete('/:id', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Requ
 });
 
 // Add job competency requirement (HR & Assessor)
-router.post('/:id/requirements', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
+router.post('/:id/requirements', authMiddleware, rbac(['HR', 'ASSESSOR']), validateBody({ competencyId: { kind: 'text', required: true }, requiredLevel: { kind: 'integer', required: true } }), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { competencyId, requiredLevel } = req.body as { competencyId: string; requiredLevel: number };
@@ -115,7 +136,7 @@ router.post('/:id/requirements', authMiddleware, rbac(['HR', 'ASSESSOR']), async
 });
 
 // Update job competency requirement (HR & Assessor)
-router.put('/:id/requirements/:reqId', authMiddleware, rbac(['HR', 'ASSESSOR']), async (req: Request, res: Response) => {
+router.put('/:id/requirements/:reqId', authMiddleware, rbac(['HR', 'ASSESSOR']), validateBody({ competencyId: { kind: 'text', required: true }, requiredLevel: { kind: 'integer', required: true } }), async (req: Request, res: Response) => {
   try {
     const { id, reqId } = req.params;
     const { competencyId, requiredLevel } = req.body as { competencyId?: string; requiredLevel?: number };

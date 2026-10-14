@@ -1,0 +1,780 @@
+[
+  {
+    "id": "overview",
+    "title": "What HRM Office does",
+    "roles": [
+      "EMPLOYEE",
+      "ASSESSOR",
+      "HR"
+    ],
+    "path": "/page-description",
+    "keywords": [
+      "overview",
+      "help",
+      "system",
+      "workflow",
+      "purpose",
+      "start",
+      "new user"
+    ],
+    "summary": "HRM Office brings employee information, job requirements, competency assessments, performance appraisals and development insights together in an organization workspace.",
+    "facts": [
+      "Competency assessment measures proficiency in skills required by a job.",
+      "Performance appraisal is a separate questionnaire about work performance.",
+      "Employee self-ratings, assessor ratings and consensus evidence are different sources.",
+      "The assistant explains the application; it does not read employee records, submit assessments, change assignments or make employment decisions."
+    ],
+    "steps": [
+      "Open Page Description for an overview of your workspace.",
+      "Use the sidebar to find your role's available sections.",
+      "Ask the assistant about a task, a page or a message you do not understand."
+    ]
+  },
+  {
+    "id": "employee-start",
+    "title": "Getting started as an employee",
+    "roles": [
+      "EMPLOYEE"
+    ],
+    "path": "/employee-assessment",
+    "keywords": [
+      "getting started",
+      "employee",
+      "first time",
+      "onboarding",
+      "new",
+      "self assessment"
+    ],
+    "summary": "Employees complete their own competency self-assessments and can review their personal development information. HR sets their job roles and assessor assignments.",
+    "facts": [
+      "The current job competency profile determines which competencies need rating.",
+      "Employees cannot submit an assessor review or manage HR-only settings.",
+      "If no job or competency profile is available, contact HR rather than inventing ratings."
+    ],
+    "steps": [
+      "Check your profile and assigned job information.",
+      "Open Assessment Mgt and Employee Assessment.",
+      "Start or open your self-assessment and rate each required competency using the configured proficiency levels.",
+      "Add relevant supporting comments, wait for saves to finish and submit when all required competencies are answered.",
+      "After an assessor review, open Individual Gap to compare paired ratings."
+    ]
+  },
+  {
+    "id": "assessor-start",
+    "title": "Getting started as an assessor",
+    "roles": [
+      "ASSESSOR"
+    ],
+    "path": "/assessor-assessment",
+    "keywords": [
+      "assessor",
+      "getting started",
+      "review",
+      "assigned employee",
+      "first time"
+    ],
+    "summary": "Assessors review employees assigned to them by HR. Their competency review is independent of the employee's self-assessment.",
+    "facts": [
+      "An assessor needs a current assignment to rate an employee.",
+      "Completed employee self-assessment and job requirements support the review workflow.",
+      "Removing an assessor assignment makes existing reviews view-only for that assessor.",
+      "A competency review does not automatically complete a performance appraisal."
+    ],
+    "steps": [
+      "Open Assessment Mgt and Assessor Assessment.",
+      "Choose an assigned employee whose completed self-assessment is available.",
+      "Open or start the assessor review and examine the self-ratings and required competencies.",
+      "Save your own proficiency ratings and supporting evidence.",
+      "Complete all required ratings, wait for saves and submit the review."
+    ]
+  },
+  {
+    "id": "hr-start",
+    "title": "Setting up the workspace as HR",
+    "roles": [
+      "HR"
+    ],
+    "path": "/organization-settings",
+    "keywords": [
+      "hr",
+      "setup",
+      "start",
+      "administrator",
+      "workspace",
+      "order",
+      "onboarding"
+    ],
+    "summary": "HR manages workspace setup, team members, the competency framework, jobs, employee assignments and organization analytics.",
+    "facts": [
+      "Job roles and account roles are different: a job describes responsibilities; an account role determines access.",
+      "A meaningful assessment requires job competency requirements and assessor assignments.",
+      "AI recommendations support human review and do not assign jobs or promote employees automatically."
+    ],
+    "steps": [
+      "Review Organization Settings and set up departments.",
+      "Add or invite people through Team Members or Employee Details as appropriate.",
+      "Define competency domains, categories, competencies and proficiency levels.",
+      "Create job profiles and map required competency levels.",
+      "Assign employees their job roles and assign their assessors.",
+      "Ask employees to complete self-assessments, then have assessors complete their reviews.",
+      "Use Consensus Assessment and Analytics to review results and plan development."
+    ]
+  },
+  {
+    "id": "access",
+    "title": "Account roles and access",
+    "roles": [
+      "EMPLOYEE",
+      "ASSESSOR",
+      "HR"
+    ],
+    "path": "/profile",
+    "keywords": [
+      "permission",
+      "forbidden",
+      "access denied",
+      "role",
+      "employee",
+      "assessor",
+      "hr",
+      "cannot see",
+      "missing menu"
+    ],
+    "summary": "Your account role determines the pages and actions you can use. HR, assessor and employee accounts have different responsibilities.",
+    "facts": [
+      "Employees work with their own assessments and profile.",
+      "Assessors evaluate employees assigned to them.",
+      "HR manages the workspace and uses Recommendations, Succession Planning and Report Studio.",
+      "The server checks current role, active-account status and organization membership.",
+      "An Access Denied message is not solved by guessing another user's link. Contact HR if your account has the wrong role or assignments."
+    ],
+    "steps": [
+      "Open My profile in the header to check your account role.",
+      "Use the sections visible in your sidebar.",
+      "If the required responsibility is missing, ask HR to check your account role and assignments."
+    ]
+  },
+  {
+    "id": "profile",
+    "title": "Updating your profile and password",
+    "roles": [
+      "EMPLOYEE",
+      "ASSESSOR",
+      "HR"
+    ],
+    "path": "/profile",
+    "keywords": [
+      "profile",
+      "name",
+      "email",
+      "password",
+      "sign out",
+      "account",
+      "header"
+    ],
+    "summary": "The profile icon beside Sign out opens your personal profile. You can update your name, see your email and account role, and change your password.",
+    "facts": [
+      "Email is displayed but cannot be edited on the profile page.",
+      "Changing password requires the current password and a different new password.",
+      "The password must satisfy the password rules shown on the form.",
+      "Do not share passwords or reset links with the help assistant."
+    ],
+    "steps": [
+      "Click the profile icon beside Sign out in the header.",
+      "Update your name and save it.",
+      "To change password, enter the current password and a new password that meets the displayed rules, then confirm and save.",
+      "If you cannot remember your password, use Forgot your password on the sign-in page."
+    ]
+  },
+  {
+    "id": "invitations",
+    "title": "Inviting users and activating accounts",
+    "roles": [
+      "HR"
+    ],
+    "path": "/team-members",
+    "keywords": [
+      "invite",
+      "invitation",
+      "activation",
+      "email",
+      "sender",
+      "postmark",
+      "team members",
+      "temporary password"
+    ],
+    "summary": "HR invites users into the company workspace. Invited users follow the invitation and create a personal password during account activation.",
+    "facts": [
+      "Invitations depend on the configured email service.",
+      "A rejected sender address means the email sender is not verified with the email provider; a system administrator must correct mail configuration.",
+      "The help assistant cannot resend invitations or verify that a particular invitation was delivered."
+    ],
+    "steps": [
+      "Open Organization and Team Members to manage invited accounts.",
+      "Check the intended email and account role before inviting.",
+      "Ask the invited user to follow the invitation instructions and replace the temporary password.",
+      "If delivery fails, check the email address and ask the system administrator to verify the mail service configuration."
+    ]
+  },
+  {
+    "id": "departments",
+    "title": "Departments and employee organization",
+    "roles": [
+      "HR"
+    ],
+    "path": "/employee-details",
+    "keywords": [
+      "department",
+      "employee details",
+      "team",
+      "organization",
+      "staff"
+    ],
+    "summary": "Departments organize employees and jobs in the workspace. Employee Details provides HR's employee management view.",
+    "facts": [
+      "Departments and jobs belong to the current organization.",
+      "Changing a department does not define a job's competencies; the Job Competency Profile does that.",
+      "Only HR manages employee and assignment changes."
+    ],
+    "steps": [
+      "Review the departments used by your company.",
+      "Open Employee Details to check employee records and department information.",
+      "Create suitable job profiles for the departments and assign them through Assign Job Roles."
+    ]
+  },
+  {
+    "id": "framework",
+    "title": "Building a competency framework",
+    "roles": [
+      "HR",
+      "ASSESSOR"
+    ],
+    "path": "/competency",
+    "keywords": [
+      "framework",
+      "domain",
+      "category",
+      "competency",
+      "skill",
+      "proficiency",
+      "level"
+    ],
+    "summary": "The competency framework defines skills and the proficiency levels used to assess them. Domains and categories organize the competency library.",
+    "facts": [
+      "A competency represents a skill or capability.",
+      "Configured proficiency levels define valid whole-number competency ratings.",
+      "The assessment uses the organization's configured scale; when no levels are configured, ratings fall back to 1–5.",
+      "Create job requirements separately through Job Competency Profile.",
+      "HR and assessor accounts can maintain these framework or job profiles. Employees view available information without managing these profiles."
+    ],
+    "steps": [
+      "Open Competency Framework in the sidebar.",
+      "Set up domains and categories to organize competencies.",
+      "Create clear competency names and descriptions.",
+      "Define proficiency levels and their labels so employees and assessors interpret ratings consistently.",
+      "Map these competencies to jobs with the required proficiency levels."
+    ]
+  },
+  {
+    "id": "jobs",
+    "title": "Creating jobs and competency requirements",
+    "roles": [
+      "HR",
+      "ASSESSOR"
+    ],
+    "path": "/job-competency-profile",
+    "keywords": [
+      "job",
+      "job profile",
+      "requirements",
+      "required level",
+      "competency profile",
+      "role suitability"
+    ],
+    "summary": "A job profile defines a role in the company. Its competency profile states which competencies are required and the expected level for each.",
+    "facts": [
+      "Creating a job alone does not set competency requirements.",
+      "An empty competency profile cannot establish readiness or generate meaningful job-based assessment questions.",
+      "Readiness compares assessed evidence with the required levels, and HR verifies interest and experience before any assignment.",
+      "HR and assessor accounts can maintain these framework or job profiles. Employees view available information without managing these profiles."
+    ],
+    "steps": [
+      "Open Job Profiling and Job to create or review a job.",
+      "Open Job Competency Profile and select that job.",
+      "Add each required competency and choose its required proficiency level.",
+      "Save the requirements and use Assign Job Roles to give the job to the appropriate employees."
+    ]
+  },
+  {
+    "id": "job-assignments",
+    "title": "Assigning employee job roles",
+    "roles": [
+      "HR"
+    ],
+    "path": "/employee-job-assignment",
+    "keywords": [
+      "assign job",
+      "job assignment",
+      "responsibility",
+      "start date",
+      "current role",
+      "additional role"
+    ],
+    "summary": "Assign Job Roles connects employees with company job profiles. An employee can have more than one assigned responsibility.",
+    "facts": [
+      "A future start date is not a current assignment until that date arrives.",
+      "Account roles such as ASSESSOR are separate from job-role assignments.",
+      "Adding an additional role does not automatically remove existing job assignments.",
+      "AI help cannot perform assignments."
+    ],
+    "steps": [
+      "Open User & Role Management and Assign Job Roles.",
+      "Choose the employee and the job profile.",
+      "Set the appropriate start date and save.",
+      "Review the employee's existing responsibilities and workload before adding another role.",
+      "Check the job competency profile if the assessment has no expected competencies."
+    ]
+  },
+  {
+    "id": "assessor-assignments",
+    "title": "Assigning an assessor to an employee",
+    "roles": [
+      "HR"
+    ],
+    "path": "/employee-assessor-assign",
+    "keywords": [
+      "assign assessor",
+      "reviewer",
+      "assessor assignment",
+      "not assigned",
+      "employee not visible"
+    ],
+    "summary": "Assign an Assessor lets HR decide who reviews each employee. This is separate from assigning the employee a job.",
+    "facts": [
+      "Assessors need a current assignment to save ratings for an employee.",
+      "An employee's completed self-assessment is needed for the assessor review cycle.",
+      "An unassigned assessor may have view-only access to old reviews but cannot continue rating them."
+    ],
+    "steps": [
+      "Open User & Role Management and Assign an Assessor.",
+      "Select the employee and the correct assessor account.",
+      "Save the assignment and check that it appears in the assignment list.",
+      "Ask the employee to complete their self-assessment before the assessor starts reviewing."
+    ]
+  },
+  {
+    "id": "assessment-basics",
+    "title": "Competency assessment and rating scales",
+    "roles": [
+      "EMPLOYEE",
+      "ASSESSOR",
+      "HR"
+    ],
+    "path": "/competency",
+    "keywords": [
+      "assessment",
+      "rating",
+      "scale",
+      "competency score",
+      "percentage",
+      "self",
+      "consensus",
+      "status"
+    ],
+    "summary": "Competency assessments measure proficiency in job-related competencies. Employee self-ratings, assessor reviews and consensus ratings are different evidence types.",
+    "facts": [
+      "PENDING and IN_PROGRESS records are drafts, not completed assessment evidence.",
+      "COMPLETED and REVIEWED records are finalized evidence.",
+      "The competency percentage normalizes assessor or consensus proficiency ratings against the configured maximum level.",
+      "A competency percentage is not a performance appraisal percentage.",
+      "Missing ratings are missing evidence, not a score of zero.",
+      "Submitted assessment ratings are read-only; contact HR to discuss a new review cycle or a correction."
+    ],
+    "steps": [
+      "Read the competency definition and proficiency labels before rating.",
+      "Use the level that best fits evidence of the work rather than guessing from the overall percentage.",
+      "Complete every required competency and wait for saves before submitting.",
+      "Use the review status and assessment dates to distinguish drafts from completed records."
+    ]
+  },
+  {
+    "id": "consensus",
+    "title": "Reviewing consensus assessments",
+    "roles": [
+      "HR"
+    ],
+    "path": "/consensus-assessment",
+    "keywords": [
+      "consensus",
+      "final rating",
+      "disagreement",
+      "assessors average",
+      "review cycle"
+    ],
+    "summary": "Consensus Assessment brings completed self-assessment and assessor reviews from the matching cycle together for HR review.",
+    "facts": [
+      "HR reviews the completed assessor evidence and employee self-ratings.",
+      "Consensus must refer to the relevant assessment cycle, not mix historical reviews with a newer self-assessment.",
+      "A latest completed consensus can provide the competency evidence used by talent insights.",
+      "The assistant cannot agree or submit a consensus on behalf of HR.",
+      "Once the latest self-assessment and all currently assigned assessor reviews in that cycle are complete, this page automatically saves or refreshes the consensus averages. There is no separate manual approval button in this view."
+    ],
+    "steps": [
+      "Open Assessment Mgt and Consensus Assessment.",
+      "Locate the employee and check the review cycle and assessor count.",
+      "Use Review to inspect self-ratings, assessor averages, comments and the consensus preview.",
+      "Review the saved or refreshed consensus averages and discuss substantial rating differences using evidence. If saving fails, read the displayed error and retry loading the page."
+    ]
+  },
+  {
+    "id": "individual-gap",
+    "title": "Understanding Individual Gap",
+    "roles": [
+      "EMPLOYEE",
+      "ASSESSOR"
+    ],
+    "path": "/individual-gap",
+    "keywords": [
+      "individual gap",
+      "agreement",
+      "pie",
+      "bar",
+      "self perception",
+      "difference",
+      "mixed ratings"
+    ],
+    "summary": "Individual Gap compares paired employee self-ratings and reviewed assessor ratings from the matching competency assessment cycle.",
+    "facts": [
+      "Employees see their own comparison; assessors see comparisons for their reviews.",
+      "A signed rating gap is assessor rating minus self-rating. Positive means the assessor rated higher; negative means the self-rating was higher.",
+      "The agreement chart averages absolute differences so opposing gaps do not cancel out.",
+      "Similar overall averages can still hide large differences in individual competencies; Mixed rating differences identifies this pattern.",
+      "This screen compares rating sources. It is not the same as a job-required proficiency shortfall."
+    ],
+    "steps": [
+      "Open Analytics and Individual Gap.",
+      "Select a reviewed assessment if the page offers a list.",
+      "Compare the bar chart with the detailed competency table.",
+      "Use the pie chart for agreement and read individual differences before drawing conclusions.",
+      "If no comparison appears, check that the self-assessment and assessor review are both complete for the same cycle."
+    ]
+  },
+  {
+    "id": "organization-gap",
+    "title": "Understanding Organization Gap",
+    "roles": [
+      "HR"
+    ],
+    "path": "/organization-gap",
+    "keywords": [
+      "organization gap",
+      "department gap",
+      "analytics",
+      "job roles",
+      "time range",
+      "appraisal analysis"
+    ],
+    "summary": "Organization Gap summarizes competency rating comparisons across the organization, departments and job roles. It also has a separate appraisal comparison view.",
+    "facts": [
+      "Competency comparisons use reviewed assessor ratings paired with completed employee self-ratings from the matching cycle.",
+      "Employee totals count distinct employees rather than counting every review as another person.",
+      "The selected time range filters evidence; changing the date range can change what appears.",
+      "Appraisal comparisons need paired self and assessor performance responses.",
+      "Missing paired evidence does not mean an employee has no skill."
+    ],
+    "steps": [
+      "Open Analytics and Organization Gap.",
+      "Choose a time range and the Rating Comparison, Departments, Job Roles or Performance Appraisals view.",
+      "Switch between bar and pie charts where offered.",
+      "Read the detailed analysis table and source dates alongside the chart.",
+      "Refresh if you have just completed a review."
+    ]
+  },
+  {
+    "id": "performance-basics",
+    "title": "Competency review versus performance appraisal",
+    "roles": [
+      "EMPLOYEE",
+      "ASSESSOR",
+      "HR"
+    ],
+    "path": "/performance-appraisal",
+    "keywords": [
+      "performance",
+      "appraisal",
+      "not assessed",
+      "missing performance",
+      "assessor already reviewed",
+      "separate assessment"
+    ],
+    "summary": "A competency review and a performance appraisal are separate workflows. Completing one does not create a score for the other.",
+    "facts": [
+      "Competency assessment rates job-related skills using proficiency levels.",
+      "Performance appraisal answers a separate question bank with ratings from 1–5.",
+      "A completed employee SELF appraisal is not a completed assessor ASSESSOR appraisal.",
+      "Assessor performance percentages use completed assessor appraisal responses, not self-ratings.",
+      "Succession Planning can suggest job roles from a completed assessor or consensus competency review alone; performance appraisal is optional extra context.",
+      "The assistant cannot inspect whether a particular employee has submitted an appraisal."
+    ],
+    "steps": [
+      "Identify whether the completed work was a competency review or a performance appraisal.",
+      "Open Performance Appraisal to see the separate questionnaire workflow.",
+      "If a performance score is missing, check the completed assessor appraisal status and the selected date range.",
+      "For Succession Planning, select the employee and use their completed assessor or consensus competency evidence without requiring a performance appraisal."
+    ]
+  },
+  {
+    "id": "employee-appraisal",
+    "title": "Completing an employee self-appraisal",
+    "roles": [
+      "EMPLOYEE"
+    ],
+    "path": "/performance-appraisal",
+    "keywords": [
+      "self appraisal",
+      "performance questionnaire",
+      "submit performance",
+      "employee performance"
+    ],
+    "summary": "The employee performance self-appraisal is a separate questionnaire from competency assessment.",
+    "facts": [
+      "Each required appraisal question needs a valid 1–5 rating before submission.",
+      "Saved answers remain a draft until the appraisal is submitted.",
+      "Completed self-appraisals are read-only and support the assigned assessor's appraisal workflow."
+    ],
+    "steps": [
+      "Open Assessment Mgt and Performance Appraisal.",
+      "Start or open your self-appraisal.",
+      "Rate each question, read its measurement guidance and add relevant comments.",
+      "Wait until answers are saved, then submit when all required questions are answered."
+    ]
+  },
+  {
+    "id": "assessor-appraisal",
+    "title": "Completing an assessor performance appraisal",
+    "roles": [
+      "ASSESSOR"
+    ],
+    "path": "/performance-appraisal",
+    "keywords": [
+      "assessor appraisal",
+      "review performance",
+      "performance questionnaire",
+      "submit",
+      "assigned appraisals"
+    ],
+    "summary": "The assessor performance appraisal is independent of the competency review and uses its own questionnaire and assessor ratings.",
+    "facts": [
+      "HR assignment and the employee's completed self-appraisal support the assessor workflow.",
+      "The assessor page lists assigned ASSESSOR appraisals.",
+      "Every required question needs the assessor's own 1–5 rating before submission.",
+      "Completing a competency assessment alone does not submit this appraisal.",
+      "If an expected assigned appraisal is absent, ask HR to check the assignment and completed self-appraisal cycle."
+    ],
+    "steps": [
+      "Open Assessment Mgt and Performance Appraisal.",
+      "Choose the assigned employee appraisal and open it.",
+      "Review the employee's self-appraisal answers, then start the assessor appraisal.",
+      "Rate every question using work evidence and save supporting comments.",
+      "Wait for all saves to finish and submit the appraisal."
+    ]
+  },
+  {
+    "id": "recommendations",
+    "title": "Using AI Recommendations",
+    "roles": [
+      "HR"
+    ],
+    "path": "/recommendations",
+    "keywords": [
+      "recommendation",
+      "training",
+      "mentoring",
+      "development plan",
+      "assessor coaching",
+      "ai"
+    ],
+    "summary": "Recommendations helps HR create a focused development plan for one employee or assessor.",
+    "facts": [
+      "Employee recommendations use available competency and performance evidence.",
+      "Assessor recommendations focus on review activity, calibration, feedback practice and mentoring. Their reviewed employees' scores are not the assessor's own performance.",
+      "AI responses provide an overview, action plan and evidence references, and can be downloaded as text or PDF.",
+      "Anonymized assessment evidence is used for AI analysis. Avoid entering private information into the optional focus text.",
+      "AI is advisory and does not automatically assign responsibilities."
+    ],
+    "steps": [
+      "Open Analytics and Recommendations.",
+      "Choose an account role filter if helpful, then choose one person.",
+      "Set the assessment period and optionally describe your focus.",
+      "Generate recommendations and inspect the supporting evidence.",
+      "Discuss practical development goals with the person before acting."
+    ]
+  },
+  {
+    "id": "succession",
+    "title": "Suggesting other job roles with Succession Planning",
+    "roles": [
+      "HR"
+    ],
+    "path": "/succession",
+    "keywords": [
+      "succession",
+      "specific roles",
+      "career",
+      "job suggestion",
+      "other job",
+      "suitable roles",
+      "performance optional"
+    ],
+    "summary": "Succession Planning lets HR select one employee and ask AI for one to three specific other job titles based on completed assessor or consensus competency evidence.",
+    "facts": [
+      "An assessor performance appraisal is optional and is not a prerequisite for role suggestions.",
+      "Suggestions can include career directions beyond existing company job profiles.",
+      "Each suggested role includes a reason tied to assessment evidence and practical development steps.",
+      "A suggestion is not verified job readiness, a promotion, a replacement decision or proof of a vacancy.",
+      "Listed in company means the title matches an existing company job profile. Not listed in company means the proposal is a career direction, not a confirmed company role.",
+      "If the AI returns only general advice, the system attempts one correction and otherwise asks the user to try again.",
+      "The help assistant explains this feature; it cannot evaluate a named employee or access their scores."
+    ],
+    "steps": [
+      "Open Analytics and Succession Planning.",
+      "Choose the employee and a date range containing their completed assessor or consensus review.",
+      "Check that the assessed competency evidence appears.",
+      "Click Suggest job roles; an optional focus can request a particular career direction.",
+      "Read the Suggested roles tab, supporting evidence and development steps.",
+      "Confirm employee interest, experience and actual opportunities with HR before making an assignment."
+    ]
+  },
+  {
+    "id": "reports",
+    "title": "Creating competency and performance reports",
+    "roles": [
+      "HR"
+    ],
+    "path": "/competency-performance-reports",
+    "keywords": [
+      "report",
+      "studio",
+      "pdf",
+      "download",
+      "csv",
+      "executive",
+      "detailed",
+      "export"
+    ],
+    "summary": "Report Studio generates evidence-based competency and performance reports for one person, selected staff or the organization.",
+    "facts": [
+      "HR can select a scope, date range, optional focus and report format.",
+      "Executive, detailed and development formats organize the same available evidence differently.",
+      "Text and PDF downloads contain the generated analysis and assessment references.",
+      "Evidence CSV downloads are available from the assessment evidence section.",
+      "Missing ratings and stale or misaligned evidence must be distinguished from low scores."
+    ],
+    "steps": [
+      "Open Analytics and Competency & Performance Reports.",
+      "Choose the audience and relevant date range.",
+      "Describe the focus and select a report format.",
+      "Generate the report and inspect evidence references and limitations.",
+      "Use the text, PDF or evidence CSV download offered by the page."
+    ]
+  },
+  {
+    "id": "troubleshooting",
+    "title": "When data, ratings or AI results do not appear",
+    "roles": [
+      "EMPLOYEE",
+      "ASSESSOR",
+      "HR"
+    ],
+    "path": "/page-description",
+    "keywords": [
+      "empty",
+      "missing",
+      "no evidence",
+      "not showing",
+      "not working",
+      "refresh",
+      "saving",
+      "error",
+      "timeout",
+      "ai unavailable"
+    ],
+    "summary": "Check selection, assignment, completion status and date range before assuming assessment data is missing.",
+    "facts": [
+      "No employee selected means no personal evidence has been selected; it does not prove that nobody has been assessed.",
+      "Draft assessments are not completed evidence.",
+      "A completed competency review and a completed performance appraisal are separate records.",
+      "Analytics only includes evidence in the selected period, so a review outside the range may not appear.",
+      "AI generation needs the server's configured AI connection; rate limits and provider availability can delay it.",
+      "The help guides can still be browsed when the help AI is unavailable.",
+      "The assistant cannot inspect account-specific records, recover unsaved answers, override permissions or claim an action was completed."
+    ],
+    "steps": [
+      "Select the correct person or assessment and confirm your account role.",
+      "Check the job profile and assessor assignment with HR if required.",
+      "Confirm that the relevant review was submitted rather than left in progress.",
+      "Widen the assessment date range if appropriate and refresh the evidence.",
+      "For save failures, retry the answer and wait for confirmation before submitting.",
+      "If the issue continues, share the page name, status and error message with HR or your system administrator; never share passwords."
+    ]
+  },
+  {
+    "id": "reading-framework",
+    "title": "Understanding the competency library",
+    "roles": [
+      "EMPLOYEE"
+    ],
+    "path": "/competency",
+    "keywords": [
+      "framework",
+      "category",
+      "domain",
+      "skill",
+      "competency",
+      "proficiency",
+      "meaning"
+    ],
+    "summary": "The competency library explains the skills and proficiency levels used in your assessments. HR and assessors maintain the framework; employees use it to understand expectations.",
+    "facts": [
+      "Domains and categories organize competencies.",
+      "A competency describes a capability; proficiency levels describe how strongly it is demonstrated.",
+      "Reading a competency does not submit an assessment or change a rating."
+    ],
+    "steps": [
+      "Open Competency Framework in the sidebar.",
+      "Read the competency descriptions and proficiency labels relevant to your job.",
+      "Use these definitions when completing your self-assessment.",
+      "Ask HR or your assessor if a definition or required level is unclear."
+    ]
+  },
+  {
+    "id": "reading-jobs",
+    "title": "Understanding your assigned jobs and requirements",
+    "roles": [
+      "EMPLOYEE",
+      "ASSESSOR"
+    ],
+    "path": "/employee-job-assignment",
+    "keywords": [
+      "job",
+      "job role",
+      "job profile",
+      "assigned job",
+      "requirements",
+      "current responsibility"
+    ],
+    "summary": "Job-role information describes responsibilities and required competencies. It is separate from the account role that gives you employee or assessor access.",
+    "facts": [
+      "HR manages employee job-role assignments.",
+      "A job competency profile lists the expected proficiency for each required skill.",
+      "An employee can have more than one responsibility; a future start date is not a current assignment.",
+      "Assessors use assigned employee job requirements to understand review expectations."
+    ],
+    "steps": [
+      "Open the job assignment information available in your workspace.",
+      "Check the job title and effective start date.",
+      "Read the corresponding job competency profile under Job Profiling.",
+      "Ask HR to check missing or incorrect job assignments; do not assume a missing rating means low skill."
+    ]
+  }
+]

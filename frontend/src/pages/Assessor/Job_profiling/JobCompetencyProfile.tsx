@@ -50,6 +50,7 @@ export default function JobCompetencyProfile() {
   const [proficiencyLevels, setProficiencyLevels] = useState<ProficiencyLevel[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -100,12 +101,14 @@ export default function JobCompetencyProfile() {
       const competenciesData = Array.isArray(competenciesResp) ? competenciesResp : [];
       const levelsData = Array.isArray(levelsResp) ? levelsResp : [];
 
+      const competencyById = new Map(competenciesData.map(c => [c.id, c]));
+      const levelByNumber = new Map(levelsData.map(l => [l.levelNumber, l]));
       // Build profiles from jobs and their requirements
       const enhancedProfiles: JobCompetencyProfile[] = [];
       jobsData.forEach((job: Job) => {
         job.requirements?.forEach((req: any) => {
-          const competency = competenciesData.find((c: Competency) => c.id === req.competencyId);
-          const level = levelsData.find((l: ProficiencyLevel) => l.levelNumber === req.requiredLevel);
+          const competency = competencyById.get(req.competencyId);
+          const level = levelByNumber.get(req.requiredLevel);
           
           enhancedProfiles.push({
             id: req.id,
@@ -144,13 +147,17 @@ export default function JobCompetencyProfile() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAdding || isUpdating) return;
+    setFormError(null);
     // Basic validation for required fields
     if (!formData.jobId || !formData.competencyId || !formData.requiredLevel) {
-      setError('Please select job, competency, and proficiency level');
+      setFormError('Please select job, competency, and proficiency level');
       return;
     }
     try {
-      setError(null);
+      setFormError(null);
+      const duplicateProfile = profiles.some(profile => profile.id !== selectedProfile?.id && profile.jobId === formData.jobId && profile.competencyId === formData.competencyId);
+      if (duplicateProfile) { setFormError('This job already has a requirement for that competency.'); return; }
       if (selectedProfile) {
         setIsUpdating(true);
         await updateJobRequirement(selectedProfile.jobId, selectedProfile.id, {
@@ -165,7 +172,7 @@ export default function JobCompetencyProfile() {
           (p) => p.jobId === formData.jobId && p.competencyId === formData.competencyId
         );
         if (duplicate) {
-          setError('This job-competency combination already exists.');
+          setFormError('This job-competency combination already exists.');
           setIsAdding(false);
           return;
         }
@@ -181,7 +188,7 @@ export default function JobCompetencyProfile() {
       setFormData({ jobId: "", competencyId: "", requiredLevel: 0 });
     } catch (err: any) {
       console.error('Error saving profile:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save profile. Please try again later.');
+      setFormError(err instanceof Error ? err.message : 'Failed to save profile. Please try again later.');
     } finally {
       setIsAdding(false);
       setIsUpdating(false);
@@ -189,6 +196,7 @@ export default function JobCompetencyProfile() {
   };
 
   const handleEdit = (profile: JobCompetencyProfile) => {
+    setFormError(null);
     setSelectedProfile(profile);
     setFormData({
       jobId: profile.jobId,
@@ -203,6 +211,7 @@ export default function JobCompetencyProfile() {
     if (!selectedProfile) return;
     
     try {
+      setFormError(null);
       setIsDeleting(true);
       await deleteJobRequirement(selectedProfile.jobId, selectedProfile.id);
       await fetchAllData();
@@ -210,7 +219,7 @@ export default function JobCompetencyProfile() {
       setSelectedProfile(null);
     } catch (err: any) {
       console.error('Error deleting profile:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete profile. Please try again later.');
+      setFormError(err instanceof Error ? err.message : 'Failed to delete profile. Please try again later.');
     } finally {
       setIsDeleting(false);
     }
@@ -240,7 +249,7 @@ export default function JobCompetencyProfile() {
           <p className="mt-1 text-gray-600 dark:text-gray-400">Manage job competency profiles and their required proficiency levels</p>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={() => { setFormError(null); setSelectedProfile(null); setFormData({ jobId: "", competencyId: "", requiredLevel: 0 }); setShowAddModal(true); }}
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
         >
           Add Profile
@@ -371,6 +380,7 @@ export default function JobCompetencyProfile() {
           <div className="w-full max-w-2xl rounded-xl bg-white p-5 dark:bg-gray-900">
             <h2 className="text-xl font-bold text-center text-gray-900 dark:text-white">Add New Profile</h2>
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              {formError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{formError}</p>}
               <div>
                 <label htmlFor="jobId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Job Title
@@ -463,12 +473,14 @@ export default function JobCompetencyProfile() {
           <div className="w-full max-w-2xl rounded-xl bg-white p-5 dark:bg-gray-900">
             <h2 className="text-xl font-bold text-center text-gray-900 dark:text-white">Edit Profile</h2>
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              {formError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{formError}</p>}
               <div>
                 <label htmlFor="edit_jobId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Job Title
                 </label>
                 <select
                   id="edit_jobId"
+                  disabled
                   name="jobId"
                   value={formData.jobId}
                   onChange={handleFormChange}
@@ -558,6 +570,7 @@ export default function JobCompetencyProfile() {
               Are you sure you want to delete this job competency profile?
             </p>
 
+            {formError && <p role="alert" className="mt-4 text-sm text-red-600 dark:text-red-400">{formError}</p>}
             <div className="mt-6 flex items-center justify-end gap-3">
               <button
                 onClick={() => setShowDeleteModal(false)}

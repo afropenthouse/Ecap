@@ -24,6 +24,7 @@ export interface PerformanceAppraisal {
   createdAt: string;
   startedAt?: string | null;
   completedAt?: string | null;
+  averageRating?: number | null;
   employee?: {
     id: string;
     firstName: string | null;

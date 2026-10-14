@@ -1,3 +1,4 @@
+import { matchingSelf, agreementPercentage as calculateAgreement } from '../../../utils/gapEvidence';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import {
@@ -15,6 +16,7 @@ import { UserIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import {
   getAssessments,
   getCompetencies,
+  getProficiencyLevels,
   getMyJobAssignment,
   listAssessorAssignments,
 } from "../../../api/services";
@@ -81,6 +83,7 @@ const formatDate = (dateString: string) => {
 
 function IndividualGap() {
   const { user } = useAuth();
+  const [maxLevel, setMaxLevel] = useState(5);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [assessments, setAssessments] = useState<EmployeeAssessment[]>([]);
@@ -98,21 +101,19 @@ function IndividualGap() {
         setError(null);
 
         // Fetch all necessary data
-        const [allAssessments, comps, jobAssignment, assessorAssignments] = await Promise.all([
+        const [allAssessments, comps, jobAssignment, assessorAssignments, levels] = await Promise.all([
           getAssessments(),
           getCompetencies(),
           getMyJobAssignment(),
-          listAssessorAssignments({ employeeId: user.id })
+          listAssessorAssignments({ employeeId: user.id }),
+          getProficiencyLevels()
         ]);
+        setMaxLevel(Math.max(1, ...levels.map(level => level.levelNumber), ...(levels.length ? [] : [5])));
 
-        // Get self assessment and corresponding assessor assessment
-        const selfAssessment = (allAssessments || []).find(
-          a => a.type === 'SELF' && a.employeeId === user.id && a.status === 'COMPLETED'
-        );
-
-        const assessorAssessment = (allAssessments || []).find(
+        const assessorAssessment = (allAssessments || []).filter(
           a => a.type === 'ASSESSOR' && a.employeeId === user.id && a.status === 'REVIEWED'
-        );
+        ).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+        const selfAssessment = assessorAssessment ? matchingSelf(allAssessments || [], assessorAssessment) : undefined;
 
         if (selfAssessment && assessorAssessment) {
           // Combine ratings from both assessments
@@ -256,21 +257,8 @@ function IndividualGap() {
   const getPieChartData = () => {
     if (!selectedAssessment) return null;
 
-    // Calculate average ratings
-    const employeeRatings = selectedAssessment.competency_ratings.map(r => r.rating);
-    const avgEmployeeRating = employeeRatings.reduce((sum, r) => sum + r, 0) / employeeRatings.length;
-
-    const assessorRatings = selectedAssessment.competency_ratings.map(r => r.assessor_rating || 0).filter(r => r > 0);
-    const avgAssessorRating = assessorRatings.length > 0
-      ? assessorRatings.reduce((sum, r) => sum + r, 0) / assessorRatings.length
-      : 0;
-
-    // Calculate gap
-    const gap = Math.abs(avgAssessorRating - avgEmployeeRating);
-
-    // Calculate agreement percentage (inverse of gap)
-    const maxPossibleGap = 4; // Maximum possible gap is 4 (between 1 and 5)
-    const agreementPercentage = 100 - (gap / maxPossibleGap * 100);
+    const agreementPercentage = calculateAgreement(selectedAssessment.competency_ratings.flatMap(rating =>
+      rating.assessor_rating != null ? [[rating.rating, rating.assessor_rating] as [number, number]] : []), Math.max(1, maxLevel - 1));
 
     return {
       labels: ['Agreement', 'Gap'],
@@ -540,6 +528,7 @@ function IndividualGap() {
       avgSelfRating: avgSelfRating.toFixed(1),
       avgAssessorRating: avgAssessorRating.toFixed(1),
       avgGap: avgGap.toFixed(1),
+      meanAbsoluteGap: gaps.reduce((sum, gap) => sum + Math.abs(gap), 0) / gaps.length,
       largestGap,
       largestGapCompetency: competencyName,
       isOverestimating: avgGap < 0
@@ -672,7 +661,7 @@ function IndividualGap() {
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
-                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Self-Perception</h3>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Rating pattern</h3>
                   <div className="flex items-center">
                     <div className={`rounded-full p-2 mr-3 ${
                       parseFloat(stats.avgGap) > 0.5
@@ -699,10 +688,10 @@ function IndividualGap() {
                     <div>
                       <p className="text-sm font-medium text-gray-900 dark:text-white">
                         {parseFloat(stats.avgGap) > 0.5
-                          ? 'Underestimating yourself'
+                          ? 'Higher assessor ratings'
                           : parseFloat(stats.avgGap) < -0.5
-                            ? 'Overestimating yourself'
-                            : 'Accurate self-assessment'
+                            ? 'Higher self ratings'
+                            : stats.meanAbsoluteGap > 0.5 ? 'Mixed rating differences' : 'Closely aligned ratings'
                         }
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -710,7 +699,7 @@ function IndividualGap() {
                           ? 'Your assessor rates you higher than you rate yourself'
                           : parseFloat(stats.avgGap) < -0.5
                             ? 'You rate yourself higher than your assessor rates you'
-                            : 'Your self-assessment closely matches your assessor\'s rating'
+                            : stats.meanAbsoluteGap > 0.5 ? 'Ratings differ by competency even though the overall averages are similar' : 'Your ratings are close on average across paired competencies'
                         }
                       </p>
                     </div>
@@ -723,7 +712,7 @@ function IndividualGap() {
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-8">
               <div className="h-80">
                 {chartType === 'bar' ? (
-                  <Bar data={getChartData() || {labels: [], datasets: []}} options={barOptions} />
+                  <Bar data={getChartData() || {labels: [], datasets: []}} options={{ ...barOptions, scales: { ...barOptions.scales, y: { ...barOptions.scales.y, max: maxLevel, title: { ...barOptions.scales.y.title, text: `Rating (1–${maxLevel})` } } } }} />
                 ) : (
                   <Pie data={getPieChartData() || {labels: [], datasets: []}} options={pieOptions} />
                 )}

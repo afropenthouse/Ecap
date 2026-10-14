@@ -102,6 +102,7 @@ export default function CompetencyCategory() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     if (isAdding || isUpdating) return;
     
     try {
@@ -172,7 +173,7 @@ export default function CompetencyCategory() {
         </div>
         <div className="flex justify-center sm:justify-end">
           <button 
-            onClick={() => setShowAddModal(true)}
+            onClick={() => { setError(null); setSelectedItem(null); setFormData({ name: "", domainId: "" }); setShowAddModal(true); }}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 w-full sm:w-auto"
           >
             <span>Add Category</span>
@@ -272,6 +273,7 @@ export default function CompetencyCategory() {
             </p>
             
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
               <div>
                 <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Category Name
@@ -346,6 +348,7 @@ export default function CompetencyCategory() {
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
               Are you sure you want to delete "{selectedItem?.name}"? This action cannot be undone.
             </p>
+            {error && <p role="alert" className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
             <div className="mt-6 flex items-center justify-end gap-3">
               <button
                 type="button"

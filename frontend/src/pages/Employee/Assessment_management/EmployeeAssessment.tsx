@@ -49,6 +49,8 @@ const defaultProficiencyLevels: ProficiencyLevel[] = [
 
 export default function EmployeeAssessment() {
   const { user } = useAuth();
+  const userId = user?.id;
+  const [loadingData, setLoadingData] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,11 +74,16 @@ export default function EmployeeAssessment() {
 
   // Load data on component mount
   useEffect(() => {
+    let active = true;
     const loadData = async () => {
-      if (!user) return;
+      if (!userId) {
+        setLoadingData(false);
+        return;
+      }
 
       try {
-        setLoading(true);
+        setLoadingData(true);
+        setError(null);
         
         // Load all necessary data in parallel
         const [assessmentsData, competenciesData, jobAssignmentData, departmentsData, jobsData, levelsData] = await Promise.all([
@@ -87,6 +94,7 @@ export default function EmployeeAssessment() {
           getJobs(),
           getProficiencyLevels()
         ]);
+        if (!active) return;
 
         setAssessments(assessmentsData || []);
         const requiredIds = new Set<string>((jobAssignmentData?.job?.requirements || []).map((requirement: { competencyId: string }) => requirement.competencyId));
@@ -102,36 +110,34 @@ export default function EmployeeAssessment() {
 
         // Find current self-assessment
         const selfAssessment = assessmentsData?.find(
-          (a: Assessment) => a.type === 'SELF' && a.employeeId === user.id
+          (a: Assessment) => a.type === 'SELF' && a.employeeId === userId
         );
         
-        if (selfAssessment) {
-          setCurrentAssessment(selfAssessment);
-        }
+        setCurrentAssessment(selfAssessment ?? null);
 
         // Find if any assessor has reviewed this employee
         const reviewedAssessorAssessment = assessmentsData?.find(
-          (a: Assessment) => a.type === 'ASSESSOR' && a.employeeId === user.id && a.status === 'REVIEWED'
+          (a: Assessment) => a.type === 'ASSESSOR' && a.employeeId === userId && a.status === 'REVIEWED'
         );
         
-        if (reviewedAssessorAssessment) {
-          setAssessorAssessment(reviewedAssessorAssessment);
-        }
+        setAssessorAssessment(reviewedAssessorAssessment ?? null);
 
       } catch (err) {
         console.error('Error loading data:', err);
-        setError('Failed to load assessment data. Please try again.');
+        if (active) setError('Failed to load assessment data. Please try again.');
       } finally {
-        setLoading(false);
+        if (active) setLoadingData(false);
       }
     };
 
     loadData();
-  }, [user]);
+    return () => { active = false; };
+  }, [userId]);
 
   // Function to start a new assessment
   const startNewAssessment = async () => {
-    if (!user) return;
+    if (!user || loading) return;
+    if (!competencies.length) { setError('Your HR team needs to configure competencies before you start.'); return; }
 
     try {
       setLoading(true);
@@ -147,12 +153,14 @@ export default function EmployeeAssessment() {
       
       setCurrentAssessment(updatedAssessment);
       setActiveCompetencyIndex(0);
+      setCurrentRating(0);
+      setCurrentComments('');
       if (competencies.length > 0) setShowRatingModal(true);
       else setShowSummaryModal(true);
 
     } catch (err) {
       console.error('Error starting assessment:', err);
-      setError('Failed to start assessment. Please try again.');
+      setError(err instanceof Error ? err.message : 'Failed to start assessment. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -160,31 +168,29 @@ export default function EmployeeAssessment() {
 
   // Function to handle competency rating
   const handleCompetencyRating = async (rating: number, comment: string) => {
-    if (!currentAssessment || !competencies[activeCompetencyIndex]) return;
+    if (loading || !currentAssessment || !competencies[activeCompetencyIndex]) return false;
 
     try {
       setLoading(true);
+      setError(null);
 
       const competency = competencies[activeCompetencyIndex];
 
       // Add rating via backend
-      await addAssessmentRating(currentAssessment.id, {
+      const savedRating = await addAssessmentRating(currentAssessment.id, {
         competencyId: competency.id,
         rating,
         comment
       });
 
-      // Refresh assessments to get updated ratings
-      const updatedAssessments = await getAssessments();
-      setAssessments(updatedAssessments || []);
-
-      const updatedSelfAssessment = updatedAssessments?.find(
-        (a: Assessment) => a.id === currentAssessment.id
-      );
-
-      if (updatedSelfAssessment) {
-        setCurrentAssessment(updatedSelfAssessment);
-      }
+      // The save response already contains the persisted rating. Avoid a second
+      // request that could delay the modal or fail after a successful save.
+      const updatedSelfAssessment = {
+        ...currentAssessment,
+        ratings: [...(currentAssessment.ratings || []).filter(r => r.competencyId !== competency.id), savedRating],
+      };
+      setCurrentAssessment(updatedSelfAssessment);
+      setAssessments(previous => previous.map(a => a.id === updatedSelfAssessment.id ? updatedSelfAssessment : a));
 
       const ratedIds = new Set((updatedSelfAssessment?.ratings || []).map(existingRating => existingRating.competencyId));
       const nextIndex = competencies.findIndex(item => !ratedIds.has(item.id));
@@ -194,10 +200,12 @@ export default function EmployeeAssessment() {
         setShowRatingModal(false);
         setShowSummaryModal(true);
       }
+      return true;
 
     } catch (err) {
       console.error('Error saving rating:', err);
-      setError('Failed to save rating. Please try again.');
+      setError(err instanceof Error ? err.message : 'Failed to save rating. Please try again.');
+      return false;
     } finally {
       setLoading(false);
     }
@@ -205,10 +213,11 @@ export default function EmployeeAssessment() {
 
   // Function to submit the assessment
   const submitAssessment = async () => {
-    if (!currentAssessment) return;
+    if (!currentAssessment || loading) return;
 
     try {
       setLoading(true);
+      setError(null);
 
       // Update assessment status to COMPLETED
       const finalAssessment = await updateAssessmentStatus(currentAssessment.id, 'COMPLETED');
@@ -219,7 +228,7 @@ export default function EmployeeAssessment() {
 
     } catch (err) {
       console.error('Error submitting assessment:', err);
-      setError('Failed to submit assessment. Please try again.');
+      setError(err instanceof Error ? err.message : 'Failed to submit assessment. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -230,7 +239,7 @@ export default function EmployeeAssessment() {
   const currentDepartment = currentJob ? departments.find(d => d.id === currentJob.departmentId) : null;
 
   // Calculate progress
-  const progress = currentAssessment ? calculateProgress(currentAssessment.ratings || [], competencies.length) : 0;
+  const progress = currentAssessment ? calculateProgress((currentAssessment.ratings || []).filter(rating => competencies.some(competency => competency.id === rating.competencyId)), competencies.length) : 0;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -240,7 +249,7 @@ export default function EmployeeAssessment() {
         </div>
       )}
       
-      {loading ? (
+      {loadingData ? (
         <div className="flex flex-col justify-center items-center h-64 space-y-4">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
           <p className="text-gray-600 dark:text-gray-400">Loading your assessment data...</p>
@@ -260,7 +269,9 @@ export default function EmployeeAssessment() {
             
             {currentAssessment && (currentAssessment.status === 'COMPLETED' || currentAssessment.status === 'REVIEWED' || assessorAssessment?.status === 'REVIEWED') && (
               <button
+                disabled={loading}
                 onClick={async () => {
+                  setError(null);
                   setLoading(true);
                   try {
                     const updatedAssessments = await getAssessments();
@@ -282,6 +293,7 @@ export default function EmployeeAssessment() {
                     }
                   } catch (err) {
                     console.error('Error refreshing assessment:', err);
+                    setError('Failed to refresh assessment. Please try again.');
                   } finally {
                     setLoading(false);
                   }
@@ -354,7 +366,9 @@ export default function EmployeeAssessment() {
                   <div className="flex items-center gap-4">
                     {currentAssessment.status === 'COMPLETED' && (
                       <button
+                        disabled={loading}
                         onClick={async () => {
+                          setError(null);
                           setLoading(true);
                           try {
                             const updatedAssessments = await getAssessments();
@@ -374,6 +388,7 @@ export default function EmployeeAssessment() {
                             }
                           } catch (err) {
                             console.error('Error refreshing assessment:', err);
+                            setError('Failed to refresh assessment. Please try again.');
                           } finally {
                             setLoading(false);
                           }
@@ -612,6 +627,8 @@ export default function EmployeeAssessment() {
                     </p>
                   </div>
                   <button
+                    aria-label="Close rating modal"
+                    disabled={loading}
                     onClick={() => setShowRatingModal(false)}
                     className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
                   >
@@ -626,6 +643,7 @@ export default function EmployeeAssessment() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6">
+                  {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">{error}</p>}
                   {competencies[activeCompetencyIndex] && (
                     <>
                       <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg mb-4">
@@ -646,6 +664,7 @@ export default function EmployeeAssessment() {
                             <button
                               key={level.id}
                               type="button"
+                              disabled={loading}
                               title={`${level.label}${level.description ? `: ${level.description}` : ''}`}
                               onClick={() => setCurrentRating(level.levelNumber)}
                               className={`w-10 h-10 flex items-center justify-center rounded-full ${
@@ -668,6 +687,7 @@ export default function EmployeeAssessment() {
                           Comments (Optional)
                         </label>
                         <textarea
+                          disabled={loading}
                           value={currentComments}
                           onChange={(e) => setCurrentComments(e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -690,7 +710,7 @@ export default function EmployeeAssessment() {
                         setCurrentComments('');
                       }
                     }}
-                    disabled={activeCompetencyIndex === 0}
+                    disabled={loading || activeCompetencyIndex === 0}
                     className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.05] disabled:opacity-50"
                   >
                     Previous
@@ -703,11 +723,13 @@ export default function EmployeeAssessment() {
                         return;
                       }
                       
-                      await handleCompetencyRating(currentRating, currentComments);
-                      setCurrentRating(0);
-                      setCurrentComments('');
+                      const saved = await handleCompetencyRating(currentRating, currentComments);
+                      if (saved) {
+                        setCurrentRating(0);
+                        setCurrentComments('');
+                      }
                     }}
-                  disabled={loading}
+                  disabled={loading || currentRating === 0}
                     className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? (
@@ -741,6 +763,8 @@ export default function EmployeeAssessment() {
                     </p>
                   </div>
                   <button
+                    aria-label="Close summary modal"
+                    disabled={loading}
                     onClick={() => setShowSummaryModal(false)}
                     className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
                   >
@@ -755,6 +779,7 @@ export default function EmployeeAssessment() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6">
+                  {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">{error}</p>}
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Start Date</h3>
@@ -823,6 +848,7 @@ export default function EmployeeAssessment() {
                 <div className="flex justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
                   <button
                     type="button"
+                    disabled={loading}
                     onClick={() => setShowSummaryModal(false)}
                     className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.05]"
                   >
