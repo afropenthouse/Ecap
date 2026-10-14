@@ -12,7 +12,7 @@ const field = 'mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py
 const modes: Array<{ id: AIMode; title: string; path: string; description: string }> = [
   { id: 'recommendations', title: 'Recommendations', path: '/recommendations', description: 'Turn assessment evidence into useful next steps.' },
   { id: 'succession', title: 'Succession planning', path: '/succession', description: 'Select an employee and let AI suggest other job roles from their assessor assessment.' },
-  { id: 'reports', title: 'Report studio', path: '/competency-performance-reports', description: 'Write clear, evidence-based reports for your people.' },
+  { id: 'reports', title: 'Report', path: '/competency-performance-reports', description: 'Write clear, evidence-based reports for your people.' },
 ];
 
 export default function TalentInsights() {
